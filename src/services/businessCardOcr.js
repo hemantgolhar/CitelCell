@@ -890,8 +890,8 @@ export async function scanBusinessCard(
   const worker = await createWorker('eng', 1, {
     workerPath:
       `${import.meta.env.BASE_URL}tesseract/worker.min.js`,
-    corePath:
-      `${import.meta.env.BASE_URL}tesseract/tesseract-core.wasm.js`,
+corePath:
+  `${import.meta.env.BASE_URL}tesseract/`,    
     langPath:
       `${import.meta.env.BASE_URL}tesseract/lang`,
     logger: (message) => {
