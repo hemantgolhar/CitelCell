@@ -294,6 +294,14 @@ function containsAny(text, words) {
 }
 
 function isLikelyPhoneLine(line) {
+  if (
+    /^\s*(?:mob(?:ile)?|phone|contact(?:\s*no\.?)?|tel(?:ephone)?)\s*:/i.test(
+      line
+    )
+  ) {
+    return true
+  }
+
   const matches = line.match(
     /(?:\+?\s*91[\s.-]*)?0?[6-9](?:[\s.-]*\d){9}/g
   )
@@ -637,6 +645,8 @@ function extractAddress(lines) {
       continue
     }
 
+    if (isLikelyPhoneLine(line)) continue
+
     const addressLike = isLikelyAddressLine(line)
 
     if (addressLike) {
@@ -660,7 +670,9 @@ function extractAddress(lines) {
     }
   }
 
-  return addressLines.join(', ')
+  return addressLines
+    .map((line) => line.replace(/,\s*$/, ''))
+    .join(', ')
 }
 
 export function extractBusinessCardFields(rawText) {
@@ -687,7 +699,7 @@ export function extractBusinessCardFields(rawText) {
     contactName: person.value,
     designation: designation.value,
     phone: phones[0] || '',
-    alternatePhone: phones[1] || '',
+    secondaryPhone: phones[1] || '',
     email,
     website,
     address,
