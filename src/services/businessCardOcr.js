@@ -357,7 +357,9 @@ export async function scanBusinessCard(file, onStatus = () => {}) {
       user_defined_dpi: '300',
     })
 
-    const result = await worker.recognize(image)
+    const result = await worker.recognize(image, {
+  rotateAuto: true,
+})
 
     const rawText = result.data.text.trim()
 
