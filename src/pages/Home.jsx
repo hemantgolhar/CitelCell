@@ -2,7 +2,7 @@ import DashboardCard from '../components/DashboardCard'
 import { classifyFollowUp, formatFollowUpParts } from '../utils/followUpDates'
 import { formatCurrency, getPipelineSummary, getPotentialValue, getProducts, OPEN_PIPELINE_STAGES } from '../utils/pipeline'
 
-function Home({ leads, onOpenLead, onOpenSettings }) {
+function Home({ leads, onOpenLead, onOpenSettings, onAddLead, onOpenFollowUps }) {
   const today = leads.filter((lead) => classifyFollowUp(lead.followUp) === 'today')
   const overdue = leads.filter((lead) => classifyFollowUp(lead.followUp) === 'overdue').sort((a, b) => a.followUp.localeCompare(b.followUp))
   const pipeline = getPipelineSummary(leads)
@@ -18,9 +18,14 @@ function Home({ leads, onOpenLead, onOpenSettings }) {
   return (
     <main className="page dashboard-page">
       <header className="page-header">
-        <div><p className="eyebrow">Your sales day</p><h1>CitelCell</h1><p className="subtitle">Today&apos;s Sales Activity</p></div>
+        <div className="dashboard-brand"><h1>CitelCell</h1><p className="subtitle">Today&apos;s Sales Activity</p></div>
         <button className="profile-avatar" type="button" onClick={onOpenSettings} aria-label="Open settings">⚙</button>
       </header>
+      <section className="quick-actions" aria-label="Quick actions">
+        <button className="scan" type="button" onClick={onAddLead}><span aria-hidden="true">▣</span><strong>Scan Card</strong></button>
+        <button className="add" type="button" onClick={onAddLead}><span aria-hidden="true">＋</span><strong>Add Lead</strong></button>
+        <button className="follow" type="button" onClick={onOpenFollowUps}><span aria-hidden="true">◷</span><strong>Follow-ups</strong></button>
+      </section>
       <section className="metrics-grid" aria-label="Today's sales summary">{metrics.map((metric) => <DashboardCard key={metric.label} {...metric} />)}</section>
       <section className="attention-section">
         <div className="section-heading"><div><p className="eyebrow">Priority queue</p><h2>Needs Attention</h2></div><span>{attention.length} items</span></div>

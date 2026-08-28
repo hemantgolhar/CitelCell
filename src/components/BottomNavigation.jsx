@@ -1,9 +1,9 @@
 const items = [
   { id: 'dashboard', label: 'Dashboard', icon: '⌂' },
-  { id: 'leads', label: 'Leads', icon: '♙' },
-  { id: 'pipeline', label: 'Pipeline', icon: '▥' },
+  { id: 'leads', label: 'Leads', icon: '♟' },
+  { id: 'pipeline', label: 'Pipeline', icon: '◆' },
   { id: 'followups', label: 'Follow-ups', icon: '◷' },
-  { id: 'reports', label: 'Reports', icon: '▥' },
+  { id: 'reports', label: 'Reports', icon: '▤' },
 ]
 
 function BottomNavigation({ activePage, onNavigate }) {

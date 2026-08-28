@@ -148,7 +148,7 @@ function App() {
     pageContent = <Pipeline leads={leads} isLoading={isLoadingLeads} onOpenLead={openLeadDetail} onMoveStage={(lead, stage) => savePipelineChange(() => moveLeadStage(lead, stage), 'Unable to move lead.')} onMarkWon={(lead, products, note) => savePipelineChange(() => markLeadWon(lead, products, note), 'Unable to mark lead won.')} onMarkLost={(lead, reason, note) => savePipelineChange(() => markLeadLost(lead, reason, note), 'Unable to mark lead lost.')} />
   } else {
     pageContent = activePage === 'dashboard'
-      ? <Home leads={leads} activities={activities} onOpenLead={openLeadDetail} onOpenSettings={() => navigate('settings')} />
+      ? <Home leads={leads} activities={activities} onOpenLead={openLeadDetail} onOpenSettings={() => navigate('settings')} onAddLead={openAddLead} onOpenFollowUps={() => navigate('followups')} />
       : <Reports />
   }
 
