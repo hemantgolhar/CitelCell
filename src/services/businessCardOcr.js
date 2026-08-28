@@ -1,6 +1,706 @@
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 const MAX_IMAGE_EDGE = 2400
 
+const COMPANY_SUFFIXES = [
+  'pvt ltd',
+  'private limited',
+  'ltd',
+  'limited',
+  'llp',
+  'inc',
+  'inc.',
+  'corp',
+  'corporation',
+  'company',
+  'co.',
+  'co',
+  'enterprises',
+  'enterprise',
+  'industries',
+  'industry',
+  'services',
+  'solutions',
+  'technologies',
+  'technology',
+  'systems',
+  'consultancy',
+  'consultants',
+  'associates',
+  'group',
+  'traders',
+  'trading',
+  'international',
+  'investments',
+  'investment',
+  'hospital',
+  'clinic',
+  'restaurant',
+  'cafe',
+  'foods',
+  'motors',
+  'builders',
+  'developers',
+  'agency',
+  'agencies',
+]
+
+const DESIGNATION_WORDS = [
+  'founder',
+  'co-founder',
+  'director',
+  'managing director',
+  'manager',
+  'general manager',
+  'assistant manager',
+  'sales manager',
+  'marketing manager',
+  'hr manager',
+  'manager hr',
+  'manager - hr',
+  'manager-hr',
+  'proprietor',
+  'owner',
+  'partner',
+  'ceo',
+  'cto',
+  'cfo',
+  'coo',
+  'president',
+  'vice president',
+  'vp',
+  'executive',
+  'sales executive',
+  'business development',
+  'business development manager',
+  'consultant',
+  'advisor',
+  'engineer',
+  'architect',
+  'advocate',
+  'lawyer',
+  'doctor',
+  'pediatrician',
+  'intensivist',
+  'surgeon',
+  'physician',
+  'dentist',
+  'specialist',
+  'designer',
+  'accountant',
+  'chartered accountant',
+  'hr',
+]
+
+const QUALIFICATION_WORDS = [
+  'mbbs',
+  'md',
+  'ms',
+  'dnb',
+  'dch',
+  'bds',
+  'mch',
+  'frcs',
+  'ca',
+  'cs',
+  'mba',
+  'bba',
+  'bcom',
+  'mcom',
+  'be',
+  'b.e',
+  'btech',
+  'b.tech',
+  'mtech',
+  'm.tech',
+  'phd',
+  'fellow',
+  'picu',
+]
+
+const ADDRESS_WORDS = [
+  'road',
+  'rd',
+  'street',
+  'st',
+  'lane',
+  'nagar',
+  'colony',
+  'building',
+  'complex',
+  'plaza',
+  'floor',
+  'office',
+  'shop',
+  'city',
+  'near',
+  'opp',
+  'opposite',
+  'behind',
+  'beside',
+  'above',
+  'below',
+  'sector',
+  'phase',
+  'park',
+  'avenue',
+  'chowk',
+  'pune',
+  'mumbai',
+  'nagpur',
+  'maharashtra',
+]
+
+const CATEGORY_RULES = [
+  {
+    category: 'Clinic',
+    words: [
+      'doctor',
+      'dr.',
+      'dr ',
+      'clinic',
+      'hospital',
+      'medical',
+      'pediatrician',
+      'intensivist',
+      'surgeon',
+      'physician',
+      'dentist',
+      'healthcare',
+    ],
+  },
+  {
+    category: 'Restaurant',
+    words: [
+      'restaurant',
+      'cafe',
+      'food',
+      'foods',
+      'dining',
+      'cuisine',
+      'veg cuisine',
+      'pure veg',
+      'vegetarian',
+      'hotel',
+      'kitchen',
+      'bakery',
+    ],
+  },
+  {
+    category: 'Financial Services',
+    words: [
+      'investment',
+      'investments',
+      'finance',
+      'financial',
+      'insurance',
+      'wealth',
+      'mutual fund',
+      'portfolio',
+      'securities',
+    ],
+  },
+  {
+    category: 'Professional Services',
+    words: [
+      'services',
+      'consultancy',
+      'consultants',
+      'consulting',
+      'solutions',
+      'associates',
+      'agency',
+    ],
+  },
+]
+
+function normalizeText(value = '') {
+  return value
+    .replace(/\r/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function normalizeLine(value = '') {
+  return value
+    .replace(/[|•●▪■◆]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function normalizePhone(value = '') {
+  let digits = value.replace(/\D/g, '')
+
+  if (digits.length === 12 && digits.startsWith('91')) {
+    digits = digits.slice(2)
+  }
+
+  if (digits.length === 11 && digits.startsWith('0')) {
+    digits = digits.slice(1)
+  }
+
+  if (/^[6-9]\d{9}$/.test(digits)) {
+    return digits
+  }
+
+  return ''
+}
+
+function isEmail(line) {
+  return /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(line)
+}
+
+function extractEmail(text) {
+  const match = text.match(
+    /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i
+  )
+
+  return match?.[0] || ''
+}
+
+function extractWebsite(text, email = '') {
+  const withoutEmail = email
+    ? text.replace(new RegExp(escapeRegExp(email), 'gi'), ' ')
+    : text
+
+  const matches = withoutEmail.match(
+    /\b(?:https?:\/\/)?(?:www\.)?[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?:\/[^\s]*)?\b/gi
+  )
+
+  if (!matches) return ''
+
+  const valid = matches.find((item) => {
+    const value = item.toLowerCase()
+
+    return (
+      !value.includes('@') &&
+      !value.endsWith('gmail.com') &&
+      !value.endsWith('yahoo.com') &&
+      !value.endsWith('outlook.com') &&
+      !value.endsWith('hotmail.com')
+    )
+  })
+
+  return valid || ''
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function containsAny(text, words) {
+  const lower = text.toLowerCase()
+  return words.some((word) => lower.includes(word))
+}
+
+function isLikelyPhoneLine(line) {
+  const matches = line.match(
+    /(?:\+?\s*91[\s.-]*)?0?[6-9](?:[\s.-]*\d){9}/g
+  )
+
+  return Boolean(matches?.length)
+}
+
+function isLikelyAddressLine(line) {
+  const lower = line.toLowerCase()
+
+  if (/\b\d{6}\b/.test(lower)) return true
+
+  if (/\b\d{3}\s\d{3}\b/.test(lower)) return true
+
+  if (containsAny(lower, ADDRESS_WORDS)) return true
+
+  if (
+    /\b(?:sr\.?\s*no|survey\s*no|plot\s*no|shop\s*no|office\s*no|floor)\b/i.test(
+      line
+    )
+  ) {
+    return true
+  }
+
+  return false
+}
+
+function scoreCompanyCandidate(line) {
+  const clean = normalizeLine(line)
+  const lower = clean.toLowerCase()
+
+  if (!clean || clean.length < 2) return -100
+  if (isEmail(clean)) return -100
+  if (isLikelyPhoneLine(clean)) return -100
+  if (isLikelyAddressLine(clean)) return -70
+
+  let score = 0
+
+  if (containsAny(lower, COMPANY_SUFFIXES)) score += 55
+
+  if (
+    /\b(?:pvt\.?\s*ltd\.?|private\s+limited|llp|limited|ltd\.?)\b/i.test(clean)
+  ) {
+    score += 50
+  }
+
+  if (
+    /\b(?:services|solutions|industries|enterprises|group|international|investment|investments|consultancy|associates|restaurant|clinic|hospital)\b/i.test(
+      clean
+    )
+  ) {
+    score += 25
+  }
+
+  const wordCount = clean.split(/\s+/).length
+
+  if (wordCount >= 2 && wordCount <= 8) score += 12
+  if (clean.length >= 5 && clean.length <= 70) score += 8
+
+  if (clean === clean.toUpperCase() && /[A-Z]/.test(clean)) {
+    score += 7
+  }
+
+  if (containsAny(lower, DESIGNATION_WORDS)) score -= 35
+  if (containsAny(lower, QUALIFICATION_WORDS)) score -= 35
+
+  if (/^(dr\.?|mr\.?|mrs\.?|ms\.?)\s+/i.test(clean)) {
+    score -= 40
+  }
+
+  return score
+}
+
+function looksLikeHumanName(line) {
+  const clean = normalizeLine(line)
+
+  if (!clean || clean.length < 3 || clean.length > 55) return false
+  if (isEmail(clean)) return false
+  if (isLikelyPhoneLine(clean)) return false
+  if (isLikelyAddressLine(clean)) return false
+
+  const lower = clean.toLowerCase()
+
+  if (containsAny(lower, COMPANY_SUFFIXES)) return false
+  if (containsAny(lower, DESIGNATION_WORDS)) return false
+  if (containsAny(lower, QUALIFICATION_WORDS)) return false
+
+  const stripped = clean
+    .replace(/^(dr\.?|mr\.?|mrs\.?|ms\.?|adv\.?)\s+/i, '')
+    .trim()
+
+  const words = stripped.split(/\s+/)
+
+  if (words.length < 2 || words.length > 4) return false
+
+  return words.every((word) =>
+    /^[A-Za-z][A-Za-z.'-]*$/.test(word)
+  )
+}
+
+function scorePersonCandidate(line, index, companyIndex) {
+  if (!looksLikeHumanName(line)) return -100
+
+  const clean = normalizeLine(line)
+
+  let score = 40
+
+  if (/^(dr\.?|mr\.?|mrs\.?|ms\.?|adv\.?)\s+/i.test(clean)) {
+    score += 20
+  }
+
+  const words = clean
+    .replace(/^(dr\.?|mr\.?|mrs\.?|ms\.?|adv\.?)\s+/i, '')
+    .split(/\s+/)
+
+  if (words.length === 2 || words.length === 3) score += 12
+
+  if (companyIndex >= 0) {
+    const distance = Math.abs(index - companyIndex)
+
+    if (distance <= 3) score += 14
+    if (distance <= 1) score += 6
+  }
+
+  if (index <= 4) score += 8
+
+  return score
+}
+
+function scoreDesignationCandidate(line, personIndex) {
+  const clean = normalizeLine(line)
+  const lower = clean.toLowerCase()
+
+  if (!clean) return -100
+  if (isEmail(clean)) return -100
+  if (isLikelyPhoneLine(clean)) return -100
+  if (isLikelyAddressLine(clean)) return -100
+
+  let score = 0
+
+  if (containsAny(lower, DESIGNATION_WORDS)) score += 60
+  if (containsAny(lower, QUALIFICATION_WORDS)) score += 15
+
+  if (personIndex >= 0) {
+    const distance = Math.abs(personIndex - line.index)
+
+    if (distance <= 2) score += 15
+  }
+
+  return score
+}
+
+function detectCategory(text) {
+  const lower = text.toLowerCase()
+
+  let bestCategory = ''
+  let bestScore = 0
+
+  for (const rule of CATEGORY_RULES) {
+    let score = 0
+
+    for (const word of rule.words) {
+      if (lower.includes(word)) {
+        score += word.includes(' ') ? 3 : 1
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score
+      bestCategory = rule.category
+    }
+  }
+
+  return bestScore > 0 ? bestCategory : ''
+}
+
+function mergeCompanyLines(lines) {
+  const merged = [...lines]
+
+  for (let i = 0; i < lines.length - 1; i += 1) {
+    const current = normalizeLine(lines[i])
+    const next = normalizeLine(lines[i + 1])
+
+    if (!current || !next) continue
+
+    const combined = `${current} ${next}`
+
+    const currentScore = scoreCompanyCandidate(current)
+    const nextScore = scoreCompanyCandidate(next)
+    const combinedScore = scoreCompanyCandidate(combined)
+
+    if (
+      combinedScore >= currentScore + 15 &&
+      combinedScore >= nextScore + 15 &&
+      combined.length <= 90
+    ) {
+      merged.push(combined)
+    }
+  }
+
+  return [...new Set(merged)]
+}
+
+function chooseCompany(lines) {
+  const candidates = mergeCompanyLines(lines)
+    .map((line) => ({
+      line,
+      score: scoreCompanyCandidate(line),
+    }))
+    .sort((a, b) => b.score - a.score)
+
+  const best = candidates[0]
+
+  if (!best || best.score < 45) {
+    return {
+      value: '',
+      confidence: 0,
+      originalIndex: -1,
+    }
+  }
+
+  const originalIndex = lines.findIndex((line) => {
+    const normalized = normalizeLine(line)
+    return best.line.includes(normalized)
+  })
+
+  return {
+    value: best.line,
+    confidence: Math.min(99, best.score),
+    originalIndex,
+  }
+}
+
+function choosePerson(lines, company) {
+  const candidates = lines
+    .map((line, index) => ({
+      line: normalizeLine(line),
+      index,
+      score: scorePersonCandidate(
+        line,
+        index,
+        company.originalIndex
+      ),
+    }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+
+  const best = candidates[0]
+
+  if (!best || best.score < 45) {
+    return {
+      value: '',
+      confidence: 0,
+      index: -1,
+    }
+  }
+
+  return {
+    value: best.line,
+    confidence: Math.min(99, best.score),
+    index: best.index,
+  }
+}
+
+function chooseDesignation(lines, person) {
+  const candidates = lines
+    .map((line, index) => {
+      const clean = normalizeLine(line)
+      const lower = clean.toLowerCase()
+
+      let score = 0
+
+      if (containsAny(lower, DESIGNATION_WORDS)) {
+        score += 65
+      }
+
+      if (containsAny(lower, QUALIFICATION_WORDS)) {
+        score += 15
+      }
+
+      if (person.index >= 0) {
+        const distance = Math.abs(index - person.index)
+
+        if (distance === 1) score += 20
+        else if (distance === 2) score += 10
+      }
+
+      if (clean === person.value) score = -100
+      if (isLikelyPhoneLine(clean)) score = -100
+      if (isEmail(clean)) score = -100
+      if (isLikelyAddressLine(clean)) score = -100
+
+      return {
+        line: clean,
+        score,
+      }
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+
+  const best = candidates[0]
+
+  if (!best || best.score < 50) {
+    return {
+      value: '',
+      confidence: 0,
+    }
+  }
+
+  return {
+    value: best.line,
+    confidence: Math.min(99, best.score),
+  }
+}
+
+function extractPhones(text) {
+  const matches =
+    text.match(
+      /(?:\+?\s*91[\s.-]*)?0?[6-9](?:[\s.-]*\d){9}/g
+    ) || []
+
+  return [
+    ...new Set(
+      matches
+        .map(normalizePhone)
+        .filter(Boolean)
+    ),
+  ]
+}
+
+function extractAddress(lines) {
+  const addressLines = []
+
+  let started = false
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = normalizeLine(lines[i])
+
+    if (!line) {
+      if (started && addressLines.length >= 2) break
+      continue
+    }
+
+    const addressLike = isLikelyAddressLine(line)
+
+    if (addressLike) {
+      started = true
+      addressLines.push(line)
+      continue
+    }
+
+    if (started) {
+      const continuation =
+        line.length > 5 &&
+        !isEmail(line) &&
+        !isLikelyPhoneLine(line) &&
+        !looksLikeHumanName(line)
+
+      if (continuation && addressLines.length < 5) {
+        addressLines.push(line)
+      } else {
+        break
+      }
+    }
+  }
+
+  return addressLines.join(', ')
+}
+
+export function extractBusinessCardFields(rawText) {
+  const text = normalizeText(rawText)
+
+  const lines = text
+    .split('\n')
+    .map(normalizeLine)
+    .filter(Boolean)
+
+  const email = extractEmail(text)
+  const website = extractWebsite(text, email)
+  const phones = extractPhones(text)
+
+  const company = chooseCompany(lines)
+  const person = choosePerson(lines, company)
+  const designation = chooseDesignation(lines, person)
+
+  const address = extractAddress(lines)
+  const category = detectCategory(text)
+
+  return {
+    businessName: company.value,
+    contactName: person.value,
+    designation: designation.value,
+    phone: phones[0] || '',
+    alternatePhone: phones[1] || '',
+    email,
+    website,
+    address,
+    category,
+
+    confidence: {
+      businessName: company.confidence,
+      contactName: person.confidence,
+      designation: designation.confidence,
+    },
+  }
+}
+
 async function decodeImage(file) {
   if ('createImageBitmap' in window) {
     try {
@@ -8,7 +708,7 @@ async function decodeImage(file) {
         imageOrientation: 'from-image',
       })
     } catch {
-      // Fall back to normal browser image decoding.
+      // Fall back to normal browser decoding.
     }
   }
 
@@ -47,19 +747,25 @@ async function preprocessImage(file) {
     )
   }
 
+  const sourceWidth =
+    image.width || image.naturalWidth || 1
+
+  const sourceHeight =
+    image.height || image.naturalHeight || 1
+
   const scale = Math.min(
     1,
-    MAX_IMAGE_EDGE / Math.max(image.width, image.height)
+    MAX_IMAGE_EDGE / Math.max(sourceWidth, sourceHeight)
   )
 
   const width = Math.max(
     1,
-    Math.round(image.width * scale)
+    Math.round(sourceWidth * scale)
   )
 
   const height = Math.max(
     1,
-    Math.round(image.height * scale)
+    Math.round(sourceHeight * scale)
   )
 
   const canvas = document.createElement('canvas')
@@ -70,53 +776,57 @@ async function preprocessImage(file) {
     willReadFrequently: true,
   })
 
-  context.fillStyle = '#ffffff'
-  context.fillRect(0, 0, width, height)
+  if (!context) {
+    throw new Error(
+      'Unable to prepare this image for scanning.'
+    )
+  }
 
   context.drawImage(image, 0, 0, width, height)
-  image.close?.()
 
-  const pixels = context.getImageData(
+  const imageData = context.getImageData(
     0,
     0,
     width,
     height
   )
 
-  const data = pixels.data
-  const contrast = 1.12
+  const pixels = imageData.data
 
-  for (let i = 0; i < data.length; i += 4) {
+  for (let i = 0; i < pixels.length; i += 4) {
     const gray =
-      0.299 * data[i] +
-      0.587 * data[i + 1] +
-      0.114 * data[i + 2]
+      pixels[i] * 0.299 +
+      pixels[i + 1] * 0.587 +
+      pixels[i + 2] * 0.114
 
-    const adjusted = Math.max(
+    const contrasted = Math.max(
       0,
       Math.min(
         255,
-        (gray - 128) * contrast + 128
+        (gray - 128) * 1.12 + 128
       )
     )
 
-    data[i] = adjusted
-    data[i + 1] = adjusted
-    data[i + 2] = adjusted
+    pixels[i] = contrasted
+    pixels[i + 1] = contrasted
+    pixels[i + 2] = contrasted
   }
 
-  context.putImageData(pixels, 0, 0)
+  context.putImageData(imageData, 0, 0)
 
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (blob) => {
-        if (blob) {
-          resolve(blob)
-        } else {
+        if (!blob) {
           reject(
-            new Error('Image processing failed.')
+            new Error(
+              'Unable to prepare the image for scanning.'
+            )
           )
+          return
         }
+
+        resolve(blob)
       },
       'image/jpeg',
       0.95
@@ -124,476 +834,44 @@ async function preprocessImage(file) {
   })
 }
 
-function cleanLine(line) {
-  return line
-    .replace(/[|]+/g, ' ')
-    .replace(/\s{2,}/g, ' ')
-    .trim()
-}
+function scoreOcrText(text = '') {
+  const clean = normalizeText(text)
 
-function unique(values) {
-  return [...new Set(values.filter(Boolean))]
-}
-
-function normalizePhone(value) {
-  let digits = value.replace(/\D/g, '')
-
-  // 09860438424 -> 9860438424
-  if (
-    digits.length === 11 &&
-    digits.startsWith('0')
-  ) {
-    digits = digits.slice(1)
-  }
-
-  // +91 93730 97689 -> 9373097689
-  if (
-    digits.length === 12 &&
-    digits.startsWith('91')
-  ) {
-    digits = digits.slice(2)
-  }
-
-  if (digits.length === 10) {
-    return digits
-  }
-
-  return ''
-}
-
-const designationWords =
-  /\b(owner|founder|director|manager|proprietor|partner|consultant|executive|officer|ceo|cto|cfo|president|sales|marketing|architect|designer|advisor|adviser|pediatrician|paediatrician|intensivist|surgeon|physician|dentist|consulting doctor)\b/i
-
-const qualificationWords =
-  /\b(mbbs|md|ms|dch|dnb|dm|mch|bds|mds|fellow|picu|nicu|frcs|fcps)\b/i
-
-const companyWords =
-  /\b(pvt|private|limited|ltd|llp|inc|corp|company|solutions|service|services|enterprises|studio|technologies|technology|tech|investment|investments|restaurant|cafe|hotel|clinic|hospital|salon|gym|store|realty|associates|industries|traders|agency|group|healthcare|medical|centre|center)\b/i
-
-const addressWords =
-  /\b(office|shop|flat|road|rd\.?|street|st\.?|avenue|ave\.?|lane|ln\.?|nagar|colony|sector|floor|building|complex|plaza|center|centre|city|district|opp\.?|opposite|near|nr\.?|behind|infront|in front|india|maharashtra|mumbai|pune|delhi|bengaluru|bangalore|baner)\b/i
-
-function detectCategory(text) {
-  const categories = [
-    [
-      'Clinic',
-      /\b(clinic|doctor|dr\.?|pediatrician|paediatrician|physician|surgeon|dentist|medical|mbbs|dch|picu|nicu|intensivist)\b/i,
-    ],
-
-    [
-      'Hospital',
-      /\bhospital\b/i,
-    ],
-
-    [
-      'Cafe',
-      /\b(cafe|coffee)\b/i,
-    ],
-
-    [
-      'Restaurant',
-      /\b(restaurant|dining|food service|veg cuisine|cuisine|pure veg|vegetarian)\b/i,
-    ],
-
-    [
-      'Hotel',
-      /\b(hotel|hospitality|resort)\b/i,
-    ],
-
-    [
-      'Salon',
-      /\b(salon|beauty|spa)\b/i,
-    ],
-
-    [
-      'Gym',
-      /\b(gym|fitness)\b/i,
-    ],
-
-    [
-      'Retail Store',
-      /\b(retail|shop|store)\b/i,
-    ],
-
-    [
-      'Optical Store',
-      /\b(optical|optician|eyewear)\b/i,
-    ],
-
-    [
-      'Real Estate',
-      /\b(real estate|realty|property)\b/i,
-    ],
-
-    [
-      'Professional Services',
-      /\b(consulting|consultant|investment|financial|finance|chartered accountant|legal|law firm|architect)\b/i,
-    ],
-  ]
-
-  return (
-    categories.find(([, pattern]) =>
-      pattern.test(text)
-    )?.[0] || ''
-  )
-}
-
-export function extractBusinessCardFields(rawText) {
-  const lines = rawText
-    .split(/\r?\n/)
-    .map(cleanLine)
-    .filter(Boolean)
-
-  // -------------------------
-  // EMAIL
-  // -------------------------
-
-  const emails = unique(
-    rawText.match(
-      /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi
-    ) || []
-  )
-
-  // -------------------------
-  // WEBSITE
-  // -------------------------
-  // Remove email addresses before website detection.
-  // Prevents gmail.com from becoming the website.
-
-  let textWithoutEmails = rawText
-
-  for (const email of emails) {
-    textWithoutEmails =
-      textWithoutEmails.replace(email, ' ')
-  }
-
-  const websites = unique(
-    (
-      textWithoutEmails.match(
-        /(?:https?:\/\/|www\.)[^\s,;]+|\b[A-Z0-9-]+\.(?:com|in|org|net|co|ai)\b/gi
-      ) || []
-    ).map((site) =>
-      site.replace(/[.,]+$/, '')
-    )
-  )
-
-  // -------------------------
-  // PHONE NUMBERS
-  // -------------------------
-
-  const phoneCandidates =
-    rawText.match(
-      /(?:\+?\s*91[\s.-]*)?0?[6-9](?:[\s.-]*\d){9}/g
-    ) || []
-
-  const phones = unique(
-    phoneCandidates
-      .map(normalizePhone)
-      .filter(Boolean)
-  )
-
-  const isPhoneLine = (line) => {
-    const digits =
-      line.replace(/\D/g, '')
-
-    return (
-      digits.length === 10 ||
-      digits.length === 11 ||
-      digits.length === 12
-    )
-  }
-
-  // -------------------------
-  // CONTACT NAME
-  // -------------------------
-
-  const contactName =
-    lines
-      .slice(0, 8)
-      .find((line) => {
-        if (line.includes('@')) {
-          return false
-        }
-
-        if (isPhoneLine(line)) {
-          return false
-        }
-
-        if (addressWords.test(line)) {
-          return false
-        }
-
-        if (qualificationWords.test(line)) {
-          return false
-        }
-
-        if (designationWords.test(line)) {
-          return false
-        }
-
-        if (
-          /^dr\.?\s+[A-Za-z][A-Za-z .'-]{2,45}$/i.test(
-            line
-          )
-        ) {
-          return true
-        }
-
-        return (
-          /^[A-Za-z][A-Za-z .'-]{2,45}$/.test(
-            line
-          ) &&
-          line.split(/\s+/).length >= 2 &&
-          line.split(/\s+/).length <= 5
-        )
-      }) || ''
-
-  // -------------------------
-  // DESIGNATION
-  // -------------------------
-
-  const designation =
-    lines.find(
-      (line) =>
-        designationWords.test(line) &&
-        line !== contactName
-    ) || ''
-
-  // -------------------------
-  // BUSINESS NAME
-  // -------------------------
-
-  let businessName = ''
-
-  // Strongest case:
-  // RIDHISH
-  // INVESTMENT
-  // SERVICE
-  // LLP
-
-  const legalSuffixIndex =
-    lines.findIndex((line) =>
-      /\b(llp|ltd|limited|pvt|private|inc|corp|company)\b/i.test(
-        line
-      )
-    )
-
-  if (legalSuffixIndex >= 0) {
-    const companyLines = []
-
-    for (
-      let i = legalSuffixIndex;
-      i >= Math.max(
-        0,
-        legalSuffixIndex - 4
-      );
-      i--
-    ) {
-      const line = lines[i]
-
-      if (!line) {
-        break
-      }
-
-      if (line.includes('@')) {
-        break
-      }
-
-      if (addressWords.test(line)) {
-        break
-      }
-
-      if (isPhoneLine(line)) {
-        break
-      }
-
-      if (
-        line === contactName ||
-        qualificationWords.test(line) ||
-        designationWords.test(line)
-      ) {
-        break
-      }
-
-      if (
-        /^[A-Za-z][A-Za-z &.'-]{1,50}$/.test(
-          line
-        )
-      ) {
-        companyLines.unshift(line)
-      } else {
-        break
-      }
-    }
-
-    businessName =
-      companyLines.join(' ').trim()
-  }
-
-  // Look for an explicit company/business line.
-  if (!businessName) {
-    const companyIndex =
-      lines.findIndex(
-        (line) =>
-          companyWords.test(line) &&
-          !designationWords.test(line) &&
-          !qualificationWords.test(line) &&
-          !addressWords.test(line) &&
-          line !== contactName
-      )
-
-    if (companyIndex >= 0) {
-      businessName =
-        lines[companyIndex]
-    }
-  }
-
-  /*
-   * IMPORTANT:
-   *
-   * Do NOT use the person's name as the business name.
-   *
-   * If OCR cannot confidently determine the company,
-   * leave Business Name blank for manual verification.
-   */
-
-  // -------------------------
-  // ADDRESS
-  // -------------------------
-
-  const addressStart =
-    lines.findIndex((line) =>
-      addressWords.test(line)
-    )
-
-  let address = ''
-
-  if (addressStart >= 0) {
-    const addressLines = []
-
-    for (
-      let i = addressStart;
-      i <
-      Math.min(
-        lines.length,
-        addressStart + 8
-      );
-      i++
-    ) {
-      let line = lines[i]
-
-      if (line.includes('@')) {
-        break
-      }
-
-      // Stop if another phone/contact line begins.
-      if (
-        addressLines.length > 0 &&
-        isPhoneLine(line) &&
-        !/\b\d{3}[\s-]?\d{3}\b/.test(
-          line
-        )
-      ) {
-        break
-      }
-
-      line = line
-        .replace(/^[^A-Za-z0-9]+/, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-
-      line = line
-        .replace(/\s+v\d+$/i, '')
-        .trim()
-
-      if (line) {
-        addressLines.push(line)
-      }
-
-      // Stop after Indian PIN code.
-      if (
-        /\b\d{3}[\s-]?\d{3}\b/.test(
-          line
-        )
-      ) {
-        break
-      }
-    }
-
-    address =
-      addressLines.join(', ')
-  }
-
-  return {
-    businessName,
-    contactName,
-
-    phone:
-      phones[0] || '',
-
-    secondaryPhone:
-      phones[1] || '',
-
-    email:
-      emails[0] || '',
-
-    website:
-      websites[0] || '',
-
-    address,
-
-    category:
-      detectCategory(rawText),
-
-    designation,
-  }
-}
-
-function scoreOcrText(text) {
-  if (!text) {
-    return 0
-  }
+  if (!clean) return 0
 
   let score = 0
 
-  const words =
-    text.match(/[A-Za-z]{2,}/g) || []
-
-  score += Math.min(
-    words.length,
-    40
-  )
-
-  if (
-    /[6-9](?:[\s.-]*\d){9}/.test(
-      text
-    )
-  ) {
-    score += 12
-  }
+  const words = clean.match(/[A-Za-z]{2,}/g) || []
+  score += Math.min(words.length, 50)
 
   if (
     /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(
-      text
+      clean
     )
   ) {
+    score += 20
+  }
+
+  if (
+    /(?:\+?\s*91[\s.-]*)?0?[6-9](?:[\s.-]*\d){9}/.test(
+      clean
+    )
+  ) {
+    score += 18
+  }
+
+  if (/\b\d{6}\b|\b\d{3}\s\d{3}\b/.test(clean)) {
     score += 12
   }
 
   if (
-    /\b(road|rd|street|lane|floor|office|building|plaza|pune|mumbai|nagar|city)\b/i.test(
-      text
-    )
+    containsAny(clean.toLowerCase(), [
+      ...COMPANY_SUFFIXES,
+      ...ADDRESS_WORDS,
+      ...DESIGNATION_WORDS,
+    ])
   ) {
-    score += 8
-  }
-
-  if (
-    /\b(llp|ltd|pvt|company|services|restaurant|cafe|hotel|clinic|hospital|cuisine|investment)\b/i.test(
-      text
-    )
-  ) {
-    score += 8
+    score += 15
   }
 
   return score
@@ -601,158 +879,84 @@ function scoreOcrText(text) {
 
 export async function scanBusinessCard(
   file,
-  onStatus = () => {}
+  onProgress
 ) {
-  let worker
+  const image = await preprocessImage(file)
+
+  const { createWorker, PSM } = await import(
+    'tesseract.js'
+  )
+
+  const worker = await createWorker('eng', 1, {
+    workerPath:
+      `${import.meta.env.BASE_URL}tesseract/worker.min.js`,
+    corePath:
+      `${import.meta.env.BASE_URL}tesseract/tesseract-core.wasm.js`,
+    langPath:
+      `${import.meta.env.BASE_URL}tesseract/lang`,
+    logger: (message) => {
+      if (
+        message.status === 'recognizing text' &&
+        typeof message.progress === 'number'
+      ) {
+        onProgress?.(
+          Math.round(message.progress * 100)
+        )
+      }
+    },
+  })
 
   try {
-    onStatus(
-      'Preparing business card…'
-    )
+    await worker.setParameters({
+      tessedit_pageseg_mode: PSM.AUTO,
+      preserve_interword_spaces: '1',
+    })
 
-    const image =
-      await preprocessImage(file)
-
-    onStatus(
-      'Starting offline scanner…'
-    )
-
-    const { createWorker } =
-      await import('tesseract.js')
-
-    const assetBase =
-      `${import.meta.env.BASE_URL}tesseract`
-
-    worker = await createWorker(
-      'eng',
-      1,
+    const firstResult = await worker.recognize(
+      image,
       {
-        workerPath:
-          `${assetBase}/worker.min.js`,
-
-        langPath:
-          `${assetBase}/lang`,
-
-        corePath:
-          `${assetBase}/core`,
-
-        logger(message) {
-          if (
-            message.status ===
-            'recognizing text'
-          ) {
-            onStatus(
-              `Reading business card… ${Math.round(
-                (message.progress || 0) *
-                  100
-              )}%`
-            )
-          }
-        },
+        rotateAuto: true,
       }
     )
 
-    // -------------------------
-    // OCR PASS 1
-    // -------------------------
-
-    await worker.setParameters({
-      tessedit_pageseg_mode: '3',
-      preserve_interword_spaces: '1',
-      user_defined_dpi: '300',
-    })
-
-    const firstResult =
-      await worker.recognize(
-        image,
-        {
-          rotateAuto: true,
-        }
-      )
-
-    let rawText =
-      firstResult.data.text.trim()
-
-    const firstScore =
-      scoreOcrText(rawText)
-
-    // -------------------------
-    // OCR PASS 2
-    // -------------------------
-    // Only retry when first result is weak.
+    let bestText = firstResult.data.text || ''
+    let bestScore = scoreOcrText(bestText)
 
     if (
-      firstScore < 35 ||
-      rawText.length < 80
+      bestScore < 35 ||
+      normalizeText(bestText).length < 80
     ) {
-      onStatus(
-        'Improving scan accuracy…'
-      )
-
       await worker.setParameters({
-        tessedit_pageseg_mode: '6',
+        tessedit_pageseg_mode:
+          PSM.SINGLE_BLOCK,
         preserve_interword_spaces: '1',
-        user_defined_dpi: '300',
       })
 
       const secondResult =
-        await worker.recognize(
-          image,
-          {
-            rotateAuto: true,
-          }
-        )
+        await worker.recognize(image, {
+          rotateAuto: true,
+        })
 
       const secondText =
-        secondResult.data.text.trim()
+        secondResult.data.text || ''
 
       const secondScore =
         scoreOcrText(secondText)
 
-      if (
-        secondScore > firstScore
-      ) {
-        rawText = secondText
+      if (secondScore > bestScore) {
+        bestText = secondText
+        bestScore = secondScore
       }
     }
 
-    if (!rawText) {
-      throw new Error(
-        'No readable text was found. Move closer to the card and try again.'
-      )
-    }
-
-    onStatus(
-      'Extracting contact details…'
-    )
+    const fields =
+      extractBusinessCardFields(bestText)
 
     return {
-      rawText,
-
-      fields:
-        extractBusinessCardFields(
-          rawText
-        ),
+      rawText: normalizeText(bestText),
+      ...fields,
     }
-  } catch (error) {
-    console.error(
-      'Business card OCR error:',
-      error
-    )
-
-    if (
-      error instanceof Error &&
-      /valid|large|opened|readable|readable text/i.test(
-        error.message
-      )
-    ) {
-      throw error
-    }
-
-    throw new Error(
-      'The business card could not be scanned. Try a closer, well-lit photo.'
-    )
   } finally {
-    await worker?.terminate()
+    await worker.terminate()
   }
 }
