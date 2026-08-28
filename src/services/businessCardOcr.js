@@ -589,17 +589,108 @@ export async function scanBusinessCard(
       user_defined_dpi: '300',
     })
 
-    const result =
-      await worker.recognize(
-        image,
-        {
-          rotateAuto: true,
-        }
-      )
+// First OCR pass: automatic page segmentation
+onStatus('Reading business card…')
 
-    const rawText =
-      result.data.text.trim()
+await worker.setParameters({
+  tessedit_pageseg_mode: '3',
+  preserve_interword_spaces: '1',
+  user_defined_dpi: '300',
+})
 
+const firstResult = await worker.recognize(
+  image,
+  {
+    rotateAuto: true,
+  }
+)
+
+let rawText = firstResult.data.text.trim()
+
+// Score OCR quality.
+// Business cards should normally contain several useful words,
+// numbers, phone/email/address information, etc.
+function scoreOcrText(text) {
+  if (!text) return 0
+
+  let score = 0
+
+  const words =
+    text.match(/[A-Za-z]{2,}/g) || []
+
+  score += Math.min(words.length, 40)
+
+  if (
+    /[6-9](?:[\s.-]*\d){9}/.test(text)
+  ) {
+    score += 12
+  }
+
+  if (
+    /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(
+      text
+    )
+  ) {
+    score += 12
+  }
+
+  if (
+    /\b(road|rd|street|lane|floor|office|building|plaza|pune|mumbai|nagar|city)\b/i.test(
+      text
+    )
+  ) {
+    score += 8
+  }
+
+  if (
+    /\b(llp|ltd|pvt|company|services|restaurant|cafe|hotel|clinic|hospital|cuisine|investment)\b/i.test(
+      text
+    )
+  ) {
+    score += 8
+  }
+
+  return score
+}
+
+const firstScore =
+  scoreOcrText(rawText)
+
+// If first scan looks weak, try another layout mode.
+// Mode 6 treats the card more like one uniform text block.
+if (
+  firstScore < 35 ||
+  rawText.length < 80
+) {
+  onStatus(
+    'Improving scan accuracy…'
+  )
+
+  await worker.setParameters({
+    tessedit_pageseg_mode: '6',
+    preserve_interword_spaces: '1',
+    user_defined_dpi: '300',
+  })
+
+  const secondResult =
+    await worker.recognize(
+      image,
+      {
+        rotateAuto: true,
+      }
+    )
+
+  const secondText =
+    secondResult.data.text.trim()
+
+  const secondScore =
+    scoreOcrText(secondText)
+
+  // Keep whichever OCR result looks more useful.
+  if (secondScore > firstScore) {
+    rawText = secondText
+  }
+}    
     if (!rawText) {
       throw new Error(
         'No readable text was found. Move closer to the card and try again.'
