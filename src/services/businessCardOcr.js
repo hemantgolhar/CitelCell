@@ -834,6 +834,67 @@ async function preprocessImage(file) {
   })
 }
 
+async function rotateImage(imageBlob, degrees) {
+  const image = await decodeImage(imageBlob)
+  const sourceWidth =
+    image.width || image.naturalWidth || 1
+  const sourceHeight =
+    image.height || image.naturalHeight || 1
+  const swapsDimensions = degrees % 180 !== 0
+  const canvas = document.createElement('canvas')
+  canvas.width = swapsDimensions
+    ? sourceHeight
+    : sourceWidth
+  canvas.height = swapsDimensions
+    ? sourceWidth
+    : sourceHeight
+
+  try {
+    const context = canvas.getContext('2d')
+
+    if (!context) {
+      throw new Error(
+        'Unable to prepare this image for scanning.'
+      )
+    }
+
+    context.translate(
+      canvas.width / 2,
+      canvas.height / 2
+    )
+    context.rotate((degrees * Math.PI) / 180)
+    context.drawImage(
+      image,
+      -sourceWidth / 2,
+      -sourceHeight / 2
+    )
+
+    return await new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            resolve(blob)
+          } else {
+            reject(
+              new Error(
+                'Unable to prepare this image for scanning.'
+              )
+            )
+          }
+        },
+        'image/jpeg',
+        0.95
+      )
+    })
+  } finally {
+    if (typeof image.close === 'function') {
+      image.close()
+    }
+    canvas.width = 0
+    canvas.height = 0
+  }
+}
+
 function scoreOcrText(text = '') {
   const clean = normalizeText(text)
 
@@ -877,6 +938,10 @@ function scoreOcrText(text = '') {
   return score
 }
 
+function isWeakOcrResult(text, score) {
+  return score < 35 || normalizeText(text).length < 80
+}
+
 export async function scanBusinessCard(
   file,
   onProgress
@@ -907,53 +972,68 @@ corePath:
   })
 
   try {
-    await worker.setParameters({
-      tessedit_pageseg_mode: PSM.AUTO,
-      preserve_interword_spaces: '1',
-    })
-
-    const firstResult = await worker.recognize(
-      image,
-      {
-        rotateAuto: true,
-      }
-    )
-
-    let bestText = firstResult.data.text || ''
-    let bestScore = scoreOcrText(bestText)
-
-    if (
-      bestScore < 35 ||
-      normalizeText(bestText).length < 80
-    ) {
+    const recognizeImage = async (candidateImage) => {
       await worker.setParameters({
-        tessedit_pageseg_mode:
-          PSM.SINGLE_BLOCK,
+        tessedit_pageseg_mode: PSM.AUTO,
         preserve_interword_spaces: '1',
       })
 
-      const secondResult =
-        await worker.recognize(image, {
+      const firstResult =
+        await worker.recognize(candidateImage, {
           rotateAuto: true,
         })
 
-      const secondText =
-        secondResult.data.text || ''
+      let text = firstResult.data.text || ''
+      let score = scoreOcrText(text)
 
-      const secondScore =
-        scoreOcrText(secondText)
+      if (isWeakOcrResult(text, score)) {
+        await worker.setParameters({
+          tessedit_pageseg_mode:
+            PSM.SINGLE_BLOCK,
+          preserve_interword_spaces: '1',
+        })
 
-      if (secondScore > bestScore) {
-        bestText = secondText
-        bestScore = secondScore
+        const secondResult =
+          await worker.recognize(candidateImage, {
+            rotateAuto: true,
+          })
+        const secondText =
+          secondResult.data.text || ''
+        const secondScore =
+          scoreOcrText(secondText)
+
+        if (secondScore > score) {
+          text = secondText
+          score = secondScore
+        }
+      }
+
+      return { text, score }
+    }
+
+    let bestResult = await recognizeImage(image)
+
+    if (isWeakOcrResult(
+      bestResult.text,
+      bestResult.score
+    )) {
+      for (const degrees of [90, 180, 270]) {
+        const rotatedImage =
+          await rotateImage(image, degrees)
+        const rotatedResult =
+          await recognizeImage(rotatedImage)
+
+        if (rotatedResult.score > bestResult.score) {
+          bestResult = rotatedResult
+        }
       }
     }
 
     const fields =
-      extractBusinessCardFields(bestText)
+      extractBusinessCardFields(bestResult.text)
 
     return {
-      rawText: normalizeText(bestText),
+      rawText: normalizeText(bestResult.text),
       fields,
     }
   } finally {
