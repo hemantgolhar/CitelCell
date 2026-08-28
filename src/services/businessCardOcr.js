@@ -73,14 +73,7 @@ async function preprocessImage(file) {
   context.fillStyle = '#ffffff'
   context.fillRect(0, 0, width, height)
 
-  context.drawImage(
-    image,
-    0,
-    0,
-    width,
-    height
-  )
-
+  context.drawImage(image, 0, 0, width, height)
   image.close?.()
 
   const pixels = context.getImageData(
@@ -143,13 +136,22 @@ function unique(values) {
 }
 
 function normalizePhone(value) {
-  const digits = value.replace(/\D/g, '')
+  let digits = value.replace(/\D/g, '')
 
+  // Example: 09860438424
+  if (
+    digits.length === 11 &&
+    digits.startsWith('0')
+  ) {
+    digits = digits.slice(1)
+  }
+
+  // Example: +91 93730 97689
   if (
     digits.length === 12 &&
     digits.startsWith('91')
   ) {
-    return `+91 ${digits.slice(2, 7)} ${digits.slice(7)}`
+    digits = digits.slice(2)
   }
 
   if (digits.length === 10) {
@@ -160,17 +162,33 @@ function normalizePhone(value) {
 }
 
 const designationWords =
-  /\b(owner|founder|director|manager|proprietor|partner|consultant|executive|officer|ceo|cto|cfo|president|sales|marketing|doctor|dr\.?|architect|designer|advisor|adviser)\b/i
+  /\b(owner|founder|director|manager|proprietor|partner|consultant|executive|officer|ceo|cto|cfo|president|sales|marketing|architect|designer|advisor|adviser|pediatrician|paediatrician|intensivist|surgeon|physician|dentist|consulting doctor)\b/i
+
+const qualificationWords =
+  /\b(mbbs|md|ms|dch|dnb|dm|mch|bds|mds|fellow|picu|nicu|frcs|fcps)\b/i
 
 const companyWords =
-  /\b(pvt|private|limited|ltd|llp|inc|corp|company|solutions|service|services|enterprises|studio|technologies|technology|tech|investment|investments|restaurant|cafe|hotel|clinic|hospital|salon|gym|store|realty|associates|industries|traders|agency|group)\b/i
+  /\b(pvt|private|limited|ltd|llp|inc|corp|company|solutions|service|services|enterprises|studio|technologies|technology|tech|investment|investments|restaurant|cafe|hotel|clinic|hospital|salon|gym|store|realty|associates|industries|traders|agency|group|healthcare|medical|centre|center)\b/i
 
 const addressWords =
-  /\b(office|shop|flat|road|rd\.?|street|st\.?|avenue|ave\.?|lane|ln\.?|nagar|colony|sector|floor|ground floor|building|complex|plaza|center|centre|city|district|opp\.?|opposite|near|nr\.?|india|maharashtra|mumbai|pune|delhi|bengaluru|bangalore)\b/i
+  /\b(office|shop|flat|road|rd\.?|street|st\.?|avenue|ave\.?|lane|ln\.?|nagar|colony|sector|floor|building|complex|plaza|center|centre|city|district|opp\.?|opposite|near|nr\.?|behind|infront|in front|india|maharashtra|mumbai|pune|delhi|bengaluru|bangalore|baner)\b/i
 
 function detectCategory(text) {
   const categories = [
-    ['Cafe', /\b(cafe|coffee)\b/i],
+    [
+      'Clinic',
+      /\b(clinic|doctor|dr\.?|pediatrician|paediatrician|physician|surgeon|dentist|medical|mbbs|dch|picu|nicu|intensivist)\b/i,
+    ],
+
+    [
+      'Hospital',
+      /\b(hospital)\b/i,
+    ],
+
+    [
+      'Cafe',
+      /\b(cafe|coffee)\b/i,
+    ],
 
     [
       'Restaurant',
@@ -186,13 +204,6 @@ function detectCategory(text) {
       'Salon',
       /\b(salon|beauty|spa)\b/i,
     ],
-
-    [
-      'Clinic',
-      /\b(clinic|dental|physician)\b/i,
-    ],
-
-    ['Hospital', /\bhospital\b/i],
 
     [
       'Gym',
@@ -233,22 +244,16 @@ export function extractBusinessCardFields(rawText) {
     .map(cleanLine)
     .filter(Boolean)
 
-  // -------------------------
   // EMAIL
-  // -------------------------
-
   const emails = unique(
     rawText.match(
       /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi
     ) || []
   )
 
-  // -------------------------
   // WEBSITE
-  // -------------------------
-  // Remove emails before looking for websites.
-  // This prevents gmail.com from becoming website.
-
+  // Remove email before detecting website,
+  // so gmail.com is not treated as a website.
   let textWithoutEmails = rawText
 
   for (const email of emails) {
@@ -266,41 +271,93 @@ export function extractBusinessCardFields(rawText) {
     )
   )
 
-  // -------------------------
-  // PHONE NUMBERS
-  // -------------------------
-
+  // PHONE
+  // Supports:
+  // 9373097689
+  // 93730 97689
+  // +91 93730 97689
+  // 09860438424
   const phoneCandidates =
     rawText.match(
-      /(?:\+?\s*91[\s.-]*)?(?:[6-9]\d{4}[\s.-]*\d{5}|[6-9]\d{9})/g
+      /(?:\+?\s*91[\s.-]*)?0?[6-9](?:[\s.-]*\d){9}/g
     ) || []
 
   const phones = unique(
-    phoneCandidates.map(normalizePhone)
+    phoneCandidates
+      .map(normalizePhone)
+      .filter((phone) =>
+        /^\d{10}$/.test(phone)
+      )
   )
 
-  // -------------------------
-  // DESIGNATION
-  // -------------------------
+  const isPhoneLine = (line) => {
+    const digits =
+      line.replace(/\D/g, '')
 
+    return (
+      digits.length === 10 ||
+      digits.length === 11 ||
+      digits.length === 12
+    )
+  }
+
+  // CONTACT NAME
+  // Allow titles such as Dr. in the person's name.
+  const contactName =
+    lines
+      .slice(0, 8)
+      .find((line) => {
+        if (line.includes('@')) {
+          return false
+        }
+
+        if (isPhoneLine(line)) {
+          return false
+        }
+
+        if (addressWords.test(line)) {
+          return false
+        }
+
+        if (qualificationWords.test(line)) {
+          return false
+        }
+
+        if (designationWords.test(line)) {
+          return false
+        }
+
+        // Dr. Swapnil Baheti
+        if (
+          /^dr\.?\s+[A-Za-z][A-Za-z .'-]{2,45}$/i.test(
+            line
+          )
+        ) {
+          return true
+        }
+
+        return (
+          /^[A-Za-z][A-Za-z .'-]{2,45}$/.test(
+            line
+          ) &&
+          line.split(/\s+/).length >= 2 &&
+          line.split(/\s+/).length <= 5
+        )
+      }) || ''
+
+  // DESIGNATION
   const designation =
-    lines.find((line) =>
-      designationWords.test(line)
+    lines.find(
+      (line) =>
+        designationWords.test(line) &&
+        line !== contactName
     ) || ''
 
-  // -------------------------
   // BUSINESS NAME
-  // -------------------------
-  //
-  // Handles cards such as:
-  //
-  // RIDHISH
-  // INVESTMENT
-  // SERVICE
-  // LLP
-
   let businessName = ''
 
+  // First preference:
+  // company ending in LLP/LTD/PVT etc.
   const legalSuffixIndex =
     lines.findIndex((line) =>
       /\b(llp|ltd|limited|pvt|private|inc|corp|company)\b/i.test(
@@ -321,24 +378,21 @@ export function extractBusinessCardFields(rawText) {
     ) {
       const line = lines[i]
 
-      if (!line) {
-        break
-      }
+      if (!line) break
 
-      if (line.includes('@')) {
-        break
-      }
+      if (line.includes('@')) break
 
       if (addressWords.test(line)) {
         break
       }
 
-      if (designationWords.test(line)) {
+      if (isPhoneLine(line)) {
         break
       }
 
       if (
-        line.replace(/\D/g, '').length >= 8
+        line === contactName ||
+        qualificationWords.test(line)
       ) {
         break
       }
@@ -358,15 +412,17 @@ export function extractBusinessCardFields(rawText) {
       companyLines.join(' ').trim()
   }
 
-  // Fallback for businesses without LLP/LTD/etc.
-
+  // Second preference:
+  // explicit business/company/clinic name.
   if (!businessName) {
     const companyIndex =
       lines.findIndex(
         (line) =>
           companyWords.test(line) &&
           !designationWords.test(line) &&
-          !addressWords.test(line)
+          !qualificationWords.test(line) &&
+          !addressWords.test(line) &&
+          line !== contactName
       )
 
     if (companyIndex >= 0) {
@@ -375,70 +431,17 @@ export function extractBusinessCardFields(rawText) {
     }
   }
 
-  // -------------------------
-  // PHONE-LINE HELPER
-  // -------------------------
-
-  const isPhoneLine = (line) => {
-    return (
-      line.replace(/\D/g, '').length >= 8
-    )
+  // Final fallback for individual professionals.
+  // Example: Dr. Swapnil Baheti has no separate
+  // clinic/company name printed on the card.
+  if (!businessName && contactName) {
+    businessName = contactName
   }
 
-  // -------------------------
-  // CONTACT NAME
-  // -------------------------
-
-  const contactName =
-    lines
-      .slice(0, 6)
-      .find((line) => {
-        if (line.includes('@')) {
-          return false
-        }
-
-        if (isPhoneLine(line)) {
-          return false
-        }
-
-        if (
-          designationWords.test(line)
-        ) {
-          return false
-        }
-
-        if (addressWords.test(line)) {
-          return false
-        }
-
-        if (
-          businessName &&
-          businessName
-            .toLowerCase()
-            .includes(
-              line.toLowerCase()
-            )
-        ) {
-          return false
-        }
-
-        return (
-          /^[A-Za-z][A-Za-z .'-]{2,45}$/.test(
-            line
-          ) &&
-          line.split(/\s+/).length <= 5
-        )
-      }) || ''
-
-  // -------------------------
   // ADDRESS
-  // -------------------------
-
   const addressStart =
     lines.findIndex((line) =>
-      /\b(office|shop|flat|floor|building|opp\.?|opposite|road|rd\.?|lane|address)\b/i.test(
-        line
-      )
+      addressWords.test(line)
     )
 
   let address = ''
@@ -451,19 +454,17 @@ export function extractBusinessCardFields(rawText) {
       i <
       Math.min(
         lines.length,
-        addressStart + 7
+        addressStart + 8
       );
       i++
     ) {
       let line = lines[i]
 
-      // Email means address has ended.
       if (line.includes('@')) {
         break
       }
 
-      // A phone number after address
-      // means address has ended.
+      // Stop when phone information begins.
       if (
         addressLines.length > 0 &&
         isPhoneLine(line) &&
@@ -474,19 +475,13 @@ export function extractBusinessCardFields(rawText) {
         break
       }
 
-      // Remove OCR icons such as:
-      // @ Office...
-      // 📍 Office...
       line = line
-        .replace(
-          /^[^A-Za-z0-9]+/,
-          ''
-        )
+        .replace(/^[^A-Za-z0-9]+/, '')
         .replace(/\s+/g, ' ')
         .trim()
 
-      // Remove occasional OCR junk
-      // appearing after large spaces.
+      // Remove common small OCR junk
+      // at end of an address line.
       line = line
         .replace(/\s+v\d+$/i, '')
         .trim()
@@ -495,8 +490,8 @@ export function extractBusinessCardFields(rawText) {
         addressLines.push(line)
       }
 
-      // Indian PIN code generally
-      // indicates final address line.
+      // Indian PIN code usually means
+      // this is the final address line.
       if (
         /\b\d{3}[\s-]?\d{3}\b/.test(
           line
@@ -509,10 +504,6 @@ export function extractBusinessCardFields(rawText) {
     address =
       addressLines.join(', ')
   }
-
-  // -------------------------
-  // RETURN FIELDS
-  // -------------------------
 
   return {
     businessName,
@@ -598,7 +589,6 @@ export async function scanBusinessCard(
       user_defined_dpi: '300',
     })
 
-    // Automatically correct card orientation.
     const result =
       await worker.recognize(
         image,
