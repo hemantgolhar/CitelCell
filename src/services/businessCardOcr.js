@@ -954,7 +954,7 @@ corePath:
 
     return {
       rawText: normalizeText(bestText),
-      ...fields,
+      fields,
     }
   } finally {
     await worker.terminate()
