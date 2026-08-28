@@ -138,7 +138,7 @@ function unique(values) {
 function normalizePhone(value) {
   let digits = value.replace(/\D/g, '')
 
-  // Example: 09860438424
+  // 09860438424 -> 9860438424
   if (
     digits.length === 11 &&
     digits.startsWith('0')
@@ -146,7 +146,7 @@ function normalizePhone(value) {
     digits = digits.slice(1)
   }
 
-  // Example: +91 93730 97689
+  // +91 93730 97689 -> 9373097689
   if (
     digits.length === 12 &&
     digits.startsWith('91')
@@ -158,7 +158,7 @@ function normalizePhone(value) {
     return digits
   }
 
-  return value.trim()
+  return ''
 }
 
 const designationWords =
@@ -182,7 +182,7 @@ function detectCategory(text) {
 
     [
       'Hospital',
-      /\b(hospital)\b/i,
+      /\bhospital\b/i,
     ],
 
     [
@@ -192,7 +192,7 @@ function detectCategory(text) {
 
     [
       'Restaurant',
-      /\b(restaurant|dining|food service)\b/i,
+      /\b(restaurant|dining|food service|veg cuisine|cuisine|pure veg|vegetarian)\b/i,
     ],
 
     [
@@ -244,16 +244,22 @@ export function extractBusinessCardFields(rawText) {
     .map(cleanLine)
     .filter(Boolean)
 
+  // -------------------------
   // EMAIL
+  // -------------------------
+
   const emails = unique(
     rawText.match(
       /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi
     ) || []
   )
 
+  // -------------------------
   // WEBSITE
-  // Remove email before detecting website,
-  // so gmail.com is not treated as a website.
+  // -------------------------
+  // Remove email addresses before website detection.
+  // Prevents gmail.com from becoming the website.
+
   let textWithoutEmails = rawText
 
   for (const email of emails) {
@@ -271,12 +277,10 @@ export function extractBusinessCardFields(rawText) {
     )
   )
 
-  // PHONE
-  // Supports:
-  // 9373097689
-  // 93730 97689
-  // +91 93730 97689
-  // 09860438424
+  // -------------------------
+  // PHONE NUMBERS
+  // -------------------------
+
   const phoneCandidates =
     rawText.match(
       /(?:\+?\s*91[\s.-]*)?0?[6-9](?:[\s.-]*\d){9}/g
@@ -285,9 +289,7 @@ export function extractBusinessCardFields(rawText) {
   const phones = unique(
     phoneCandidates
       .map(normalizePhone)
-      .filter((phone) =>
-        /^\d{10}$/.test(phone)
-      )
+      .filter(Boolean)
   )
 
   const isPhoneLine = (line) => {
@@ -301,8 +303,10 @@ export function extractBusinessCardFields(rawText) {
     )
   }
 
+  // -------------------------
   // CONTACT NAME
-  // Allow titles such as Dr. in the person's name.
+  // -------------------------
+
   const contactName =
     lines
       .slice(0, 8)
@@ -327,7 +331,6 @@ export function extractBusinessCardFields(rawText) {
           return false
         }
 
-        // Dr. Swapnil Baheti
         if (
           /^dr\.?\s+[A-Za-z][A-Za-z .'-]{2,45}$/i.test(
             line
@@ -345,7 +348,10 @@ export function extractBusinessCardFields(rawText) {
         )
       }) || ''
 
+  // -------------------------
   // DESIGNATION
+  // -------------------------
+
   const designation =
     lines.find(
       (line) =>
@@ -353,11 +359,18 @@ export function extractBusinessCardFields(rawText) {
         line !== contactName
     ) || ''
 
+  // -------------------------
   // BUSINESS NAME
+  // -------------------------
+
   let businessName = ''
 
-  // First preference:
-  // company ending in LLP/LTD/PVT etc.
+  // Strongest case:
+  // RIDHISH
+  // INVESTMENT
+  // SERVICE
+  // LLP
+
   const legalSuffixIndex =
     lines.findIndex((line) =>
       /\b(llp|ltd|limited|pvt|private|inc|corp|company)\b/i.test(
@@ -378,9 +391,13 @@ export function extractBusinessCardFields(rawText) {
     ) {
       const line = lines[i]
 
-      if (!line) break
+      if (!line) {
+        break
+      }
 
-      if (line.includes('@')) break
+      if (line.includes('@')) {
+        break
+      }
 
       if (addressWords.test(line)) {
         break
@@ -392,7 +409,8 @@ export function extractBusinessCardFields(rawText) {
 
       if (
         line === contactName ||
-        qualificationWords.test(line)
+        qualificationWords.test(line) ||
+        designationWords.test(line)
       ) {
         break
       }
@@ -412,8 +430,7 @@ export function extractBusinessCardFields(rawText) {
       companyLines.join(' ').trim()
   }
 
-  // Second preference:
-  // explicit business/company/clinic name.
+  // Look for an explicit company/business line.
   if (!businessName) {
     const companyIndex =
       lines.findIndex(
@@ -431,14 +448,19 @@ export function extractBusinessCardFields(rawText) {
     }
   }
 
-  // Final fallback for individual professionals.
-  // Example: Dr. Swapnil Baheti has no separate
-  // clinic/company name printed on the card.
-  if (!businessName && contactName) {
-    businessName = contactName
-  }
+  /*
+   * IMPORTANT:
+   *
+   * Do NOT use the person's name as the business name.
+   *
+   * If OCR cannot confidently determine the company,
+   * leave Business Name blank for manual verification.
+   */
 
+  // -------------------------
   // ADDRESS
+  // -------------------------
+
   const addressStart =
     lines.findIndex((line) =>
       addressWords.test(line)
@@ -464,7 +486,7 @@ export function extractBusinessCardFields(rawText) {
         break
       }
 
-      // Stop when phone information begins.
+      // Stop if another phone/contact line begins.
       if (
         addressLines.length > 0 &&
         isPhoneLine(line) &&
@@ -480,8 +502,6 @@ export function extractBusinessCardFields(rawText) {
         .replace(/\s+/g, ' ')
         .trim()
 
-      // Remove common small OCR junk
-      // at end of an address line.
       line = line
         .replace(/\s+v\d+$/i, '')
         .trim()
@@ -490,8 +510,7 @@ export function extractBusinessCardFields(rawText) {
         addressLines.push(line)
       }
 
-      // Indian PIN code usually means
-      // this is the final address line.
+      // Stop after Indian PIN code.
       if (
         /\b\d{3}[\s-]?\d{3}\b/.test(
           line
@@ -528,6 +547,56 @@ export function extractBusinessCardFields(rawText) {
 
     designation,
   }
+}
+
+function scoreOcrText(text) {
+  if (!text) {
+    return 0
+  }
+
+  let score = 0
+
+  const words =
+    text.match(/[A-Za-z]{2,}/g) || []
+
+  score += Math.min(
+    words.length,
+    40
+  )
+
+  if (
+    /[6-9](?:[\s.-]*\d){9}/.test(
+      text
+    )
+  ) {
+    score += 12
+  }
+
+  if (
+    /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(
+      text
+    )
+  ) {
+    score += 12
+  }
+
+  if (
+    /\b(road|rd|street|lane|floor|office|building|plaza|pune|mumbai|nagar|city)\b/i.test(
+      text
+    )
+  ) {
+    score += 8
+  }
+
+  if (
+    /\b(llp|ltd|pvt|company|services|restaurant|cafe|hotel|clinic|hospital|cuisine|investment)\b/i.test(
+      text
+    )
+  ) {
+    score += 8
+  }
+
+  return score
 }
 
 export async function scanBusinessCard(
@@ -583,114 +652,70 @@ export async function scanBusinessCard(
       }
     )
 
+    // -------------------------
+    // OCR PASS 1
+    // -------------------------
+
     await worker.setParameters({
       tessedit_pageseg_mode: '3',
       preserve_interword_spaces: '1',
       user_defined_dpi: '300',
     })
 
-// First OCR pass: automatic page segmentation
-onStatus('Reading business card…')
+    const firstResult =
+      await worker.recognize(
+        image,
+        {
+          rotateAuto: true,
+        }
+      )
 
-await worker.setParameters({
-  tessedit_pageseg_mode: '3',
-  preserve_interword_spaces: '1',
-  user_defined_dpi: '300',
-})
+    let rawText =
+      firstResult.data.text.trim()
 
-const firstResult = await worker.recognize(
-  image,
-  {
-    rotateAuto: true,
-  }
-)
+    const firstScore =
+      scoreOcrText(rawText)
 
-let rawText = firstResult.data.text.trim()
+    // -------------------------
+    // OCR PASS 2
+    // -------------------------
+    // Only retry when first result is weak.
 
-// Score OCR quality.
-// Business cards should normally contain several useful words,
-// numbers, phone/email/address information, etc.
-function scoreOcrText(text) {
-  if (!text) return 0
+    if (
+      firstScore < 35 ||
+      rawText.length < 80
+    ) {
+      onStatus(
+        'Improving scan accuracy…'
+      )
 
-  let score = 0
+      await worker.setParameters({
+        tessedit_pageseg_mode: '6',
+        preserve_interword_spaces: '1',
+        user_defined_dpi: '300',
+      })
 
-  const words =
-    text.match(/[A-Za-z]{2,}/g) || []
+      const secondResult =
+        await worker.recognize(
+          image,
+          {
+            rotateAuto: true,
+          }
+        )
 
-  score += Math.min(words.length, 40)
+      const secondText =
+        secondResult.data.text.trim()
 
-  if (
-    /[6-9](?:[\s.-]*\d){9}/.test(text)
-  ) {
-    score += 12
-  }
+      const secondScore =
+        scoreOcrText(secondText)
 
-  if (
-    /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(
-      text
-    )
-  ) {
-    score += 12
-  }
-
-  if (
-    /\b(road|rd|street|lane|floor|office|building|plaza|pune|mumbai|nagar|city)\b/i.test(
-      text
-    )
-  ) {
-    score += 8
-  }
-
-  if (
-    /\b(llp|ltd|pvt|company|services|restaurant|cafe|hotel|clinic|hospital|cuisine|investment)\b/i.test(
-      text
-    )
-  ) {
-    score += 8
-  }
-
-  return score
-}
-
-const firstScore =
-  scoreOcrText(rawText)
-
-// If first scan looks weak, try another layout mode.
-// Mode 6 treats the card more like one uniform text block.
-if (
-  firstScore < 35 ||
-  rawText.length < 80
-) {
-  onStatus(
-    'Improving scan accuracy…'
-  )
-
-  await worker.setParameters({
-    tessedit_pageseg_mode: '6',
-    preserve_interword_spaces: '1',
-    user_defined_dpi: '300',
-  })
-
-  const secondResult =
-    await worker.recognize(
-      image,
-      {
-        rotateAuto: true,
+      if (
+        secondScore > firstScore
+      ) {
+        rawText = secondText
       }
-    )
+    }
 
-  const secondText =
-    secondResult.data.text.trim()
-
-  const secondScore =
-    scoreOcrText(secondText)
-
-  // Keep whichever OCR result looks more useful.
-  if (secondScore > firstScore) {
-    rawText = secondText
-  }
-}    
     if (!rawText) {
       throw new Error(
         'No readable text was found. Move closer to the card and try again.'
@@ -703,6 +728,7 @@ if (
 
     return {
       rawText,
+
       fields:
         extractBusinessCardFields(
           rawText
