@@ -184,6 +184,71 @@ export async function markLeadWon(lead, soldProducts, note = '') {
   return { lead: updatedLead, activity }
 }
 
+export async function saveDealClosing(lead, closingDetails) {
+  const db = await database
+  const transaction = db.transaction([LEADS_STORE, ACTIVITIES_STORE], 'readwrite')
+  const timestamp = new Date().toISOString()
+  const isFirstClosing = !lead.closingDetails
+  const products = closingDetails.sale.productsPurchased
+  const finalSaleValue = Math.max(0, Number(closingDetails.sale.finalPrice) || 0)
+  const baseAmount = products.length ? Math.floor(finalSaleValue / products.length) : 0
+  const requestedReceived = closingDetails.payment.status === 'Paid'
+    ? finalSaleValue
+    : closingDetails.payment.status === 'Pending'
+      ? 0
+      : Number(closingDetails.payment.amountReceived) || 0
+  const amountReceived = Math.min(finalSaleValue, Math.max(0, requestedReceived))
+  const soldProducts = products.map((product, index) => ({
+    product,
+    amount: index === 0 ? baseAmount + (finalSaleValue - baseAmount * products.length) : baseAmount,
+  }))
+  const savedClosingDetails = {
+    ...closingDetails,
+    sale: { ...closingDetails.sale, finalPrice: finalSaleValue },
+    payment: {
+      ...closingDetails.payment,
+      amountReceived,
+      balance: Math.max(0, finalSaleValue - amountReceived),
+    },
+    createdAt: lead.closingDetails?.createdAt || timestamp,
+    updatedAt: timestamp,
+  }
+  const updatedLead = normalizeLead({
+    ...lead,
+    businessName: savedClosingDetails.customer.businessName,
+    contactName: savedClosingDetails.customer.contactPerson,
+    phone: savedClosingDetails.customer.primaryMobile,
+    secondaryPhone: savedClosingDetails.customer.secondaryMobile,
+    email: savedClosingDetails.customer.email,
+    address: savedClosingDetails.customer.address,
+    productsInterested: products,
+    product: products[0] || '',
+    pipelineStage: 'Won',
+    status: 'Won',
+    wonAt: lead.wonAt || timestamp,
+    soldProducts,
+    finalSaleValue,
+    closingDetails: savedClosingDetails,
+    lostAt: '',
+    lostReason: '',
+    lostNote: '',
+    updatedAt: timestamp,
+  })
+  const activity = isFirstClosing ? {
+    id: crypto.randomUUID(),
+    leadId: lead.id,
+    type: 'sale_closed',
+    outcome: 'Sale Closed',
+    note: savedClosingDetails.fulfilment.closingNotes,
+    createdAt: timestamp,
+  } : null
+
+  await transaction.objectStore(LEADS_STORE).put(updatedLead)
+  if (activity) await transaction.objectStore(ACTIVITIES_STORE).add(activity)
+  await transaction.done
+  return { lead: updatedLead, activity }
+}
+
 export async function markLeadLost(lead, reason, note = '') {
   if (!reason.trim()) throw new Error('A lost reason is required.')
   const db = await database

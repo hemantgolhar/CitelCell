@@ -8,7 +8,7 @@ import Pipeline from './pages/Pipeline'
 import PwaStatus from './components/PwaStatus'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
-import { addLead, completeFollowUp, deleteLead, getAllActivities, getAllLeads, initializeLeadData, markLeadLost, markLeadWon, moveLeadStage, rescheduleFollowUp, updateLead } from './services/db'
+import { addLead, completeFollowUp, deleteLead, getAllActivities, getAllLeads, initializeLeadData, markLeadLost, markLeadWon, moveLeadStage, rescheduleFollowUp, saveDealClosing, updateLead } from './services/db'
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard')
@@ -137,9 +137,24 @@ function App() {
     }
   }
 
+  const completeDealClosing = async (lead, closingDetails) => {
+    try {
+      const result = await saveDealClosing(lead, closingDetails)
+      setLeads((current) => current.map((item) => item.id === result.lead.id ? result.lead : item))
+      if (result.activity) setActivities((current) => [result.activity, ...current])
+      setDatabaseError('')
+      setLeadView('detail')
+      return true
+    } catch (error) {
+      console.error('Unable to save customer and sale details.', error)
+      setDatabaseError('The customer and sale details could not be saved. Please try again.')
+      return false
+    }
+  }
+
   let pageContent
   if (activePage === 'leads') {
-    pageContent = <Leads leads={leads} activities={activities} isLoading={isLoadingLeads} view={leadView} selectedLeadId={selectedLeadId} onViewChange={setLeadView} onSelectLead={setSelectedLeadId} onSaveLead={saveLead} onDeleteLead={removeLead} />
+    pageContent = <Leads leads={leads} activities={activities} isLoading={isLoadingLeads} view={leadView} selectedLeadId={selectedLeadId} onViewChange={setLeadView} onSelectLead={setSelectedLeadId} onSaveLead={saveLead} onSaveClosing={completeDealClosing} onDeleteLead={removeLead} />
   } else if (activePage === 'settings') {
     pageContent = <Settings currentLeadCount={leads.length} onBack={() => navigate('dashboard')} onRestoreComplete={reloadCrmData} />
   } else if (activePage === 'followups') {
@@ -157,7 +172,7 @@ function App() {
       {pageContent}
       <PwaStatus />
       {databaseError && <div className="database-error" role="alert">{databaseError}</div>}
-      {activePage !== 'settings' && leadView !== 'add' && leadView !== 'edit' && (
+      {activePage !== 'settings' && !['add', 'edit', 'detail', 'closing'].includes(leadView) && (
         <button className="add-lead-button" type="button" onClick={openAddLead}>
           <span aria-hidden="true">＋</span> Add Lead
         </button>
