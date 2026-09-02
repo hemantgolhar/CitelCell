@@ -6,23 +6,28 @@ import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 
 const languages = ['Auto', 'Marathi', 'Hindi', 'English']
 const recognitionLanguages = ['Auto / Mixed', 'Marathi', 'Hindi', 'English']
+const standaloneProducts = ['General', 'Aura Smart Business Card', 'Google Review Card', 'Smart Menu', 'Citeltech POS', 'Citelflow.ai']
 const quickObjections = [
   ['PRICE', 'Price'], ['THINK_ABOUT_IT', 'Think About It'], ['NO_NEED', 'No Need'],
   ['OWNER_UNAVAILABLE', 'Owner Unavailable'], ['CALL_LATER', 'Call Later'], ['SEND_DETAILS', 'Send Details'],
 ]
 
-function SalesCoach({ lead, onBack }) {
+function SalesCoach({ lead = {}, onBack }) {
   const [statement, setStatement] = useState('')
   const [responseLanguage, setResponseLanguage] = useState('Auto')
   const [recognitionLanguage, setRecognitionLanguage] = useState('Auto / Mixed')
   const [result, setResult] = useState(null)
   const [brain, setBrain] = useState(null)
-  const products = getProducts(lead)
+  const leadProducts = getProducts(lead)
+  const [selectedProduct, setSelectedProduct] = useState(leadProducts[0] || 'General')
+  const hasLead = Boolean(lead.id)
+  const effectiveLead = hasLead || selectedProduct === 'General' ? lead : { productsInterested: [selectedProduct] }
+  const products = getProducts(effectiveLead)
 
   const runCoach = (text, objectionType = '') => {
-    const coaching = analyzeSalesStatement(text, { lead, responseLanguage, objectionType })
+    const coaching = analyzeSalesStatement(text, { lead: effectiveLead, responseLanguage, objectionType })
     setResult(coaching)
-    setBrain(analyzeSalesBrain(text, { lead, objection: coaching, responseLanguage }))
+    setBrain(analyzeSalesBrain(text, { lead: effectiveLead, objection: coaching, responseLanguage }))
   }
 
   const handleRecognizedSpeech = (text) => {
@@ -48,12 +53,13 @@ function SalesCoach({ lead, onBack }) {
 
     <section className="coach-intro">
       <span aria-hidden="true">SC</span>
-      <div><strong>{lead.contactName || lead.businessName || 'Current lead'}</strong><small>{[products.join(', '), lead.pipelineStage].filter(Boolean).join(' · ')}</small></div>
+      <div><strong>{lead.contactName || lead.businessName || 'Standalone coaching'}</strong><small>{[products.join(', ') || 'General', lead.pipelineStage].filter(Boolean).join(' · ')}</small></div>
       <b>Offline</b>
     </section>
 
     <section className="coach-input-card">
       <div className="coach-card-heading"><div><p>Sales Coach</p><h2>What did the customer say?</h2></div><label>Response language<select value={responseLanguage} onChange={(event) => { setResponseLanguage(event.target.value); setResult(null); setBrain(null) }}>{languages.map((language) => <option key={language}>{language}</option>)}</select></label></div>
+      {!hasLead && <label className="coach-product-select">Select Product<select value={selectedProduct} onChange={(event) => { setSelectedProduct(event.target.value); setResult(null); setBrain(null) }}>{standaloneProducts.map((product) => <option key={product}>{product}</option>)}</select></label>}
       <label className="coach-statement">Customer said:<textarea rows="5" value={statement} onChange={(event) => { setStatement(event.target.value); setResult(null); setBrain(null) }} placeholder="Type the customer's exact words…" /></label>
       <div className="coach-microphone">
         <div className="coach-mic-settings"><label>Recognition language<select value={recognitionLanguage} disabled={speech.active} onChange={(event) => setRecognitionLanguage(event.target.value)}>{recognitionLanguages.map((language) => <option key={language}>{language}</option>)}</select></label><div className={speech.active ? 'listening' : ''}><span aria-hidden="true">●</span><strong>{speech.status}</strong></div></div>
@@ -71,10 +77,9 @@ function SalesCoach({ lead, onBack }) {
       <div className="brain-title"><div><span>Sales Brain</span><strong>{brain.product}</strong></div>{brain.buyingSignal === 'Strong' && <b>🔥 BUYING SIGNAL</b>}</div>
       <div className="brain-summary"><div><span>Conversation Stage</span><strong>{brain.stage.replaceAll('_', ' ')}</strong></div><div><span>Customer Signal</span><strong>{brain.customerSignal}</strong></div><div><span>Technique</span><strong>{brain.technique}</strong></div></div>
       {brain.warning && <div className="brain-warning">⚠ {brain.warning}</div>}
-      <article className="brain-best"><span>Best move</span><p>{brain.bestMove}</p></article>
-      <article className="coach-next"><span>Ask next</span><p>{brain.askNext}</p></article>
-      <div className="coach-guidance"><article><span>Why</span><p>{brain.why}</p></article><article><span>Avoid</span><p>{brain.avoid}</p></article></div>
-      <article className="coach-action"><span>Next action</span><strong>{brain.nextAction}</strong></article>
+      <article className="brain-punch"><span>🔥 Punch Line</span><p>{brain.punchLine}</p></article>
+      <article className="coach-next brain-ask"><span>❓ Ask Next</span><p>{brain.askNext}</p></article>
+      <div className="brain-details"><article><span>Technique</span><p>{brain.technique}</p></article><article><span>Closing Move</span><p>{brain.closingMove}</p></article><article><span>Why</span><p>{brain.why}</p></article><article><span>Avoid</span><p>{brain.avoid}</p></article></div>
       {brain.decisionMaker === 'Not Reached' && <div className="brain-decision"><span>Decision Maker</span><strong>Not Reached</strong></div>}
       <details className="brain-objection"><summary>Objection coaching</summary>
       <div className="coach-detected"><div><span>Detected objection</span><h2>{result.objectionType.replaceAll('_', ' ')}</h2></div><div><b className={`confidence-${result.confidence.toLowerCase()}`}>{result.confidence}</b><small>{result.responseLanguage}</small></div></div>

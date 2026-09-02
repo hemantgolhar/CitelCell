@@ -1,4 +1,5 @@
 import { getProducts } from '../utils/pipeline.js'
+import { normalizeSalesConversation } from './salesLanguageNormalizer.js'
 
 export const OBJECTION_TYPES = [
   'PRICE', 'THINK_ABOUT_IT', 'NO_NEED', 'OWNER_UNAVAILABLE', 'CALL_LATER', 'SEND_DETAILS',
@@ -96,7 +97,8 @@ function fill(template, product) {
 }
 
 export function analyzeSalesStatement(statement, options = {}) {
-  const input = normalize(statement)
+  const normalizedConversation = normalizeSalesConversation(statement)
+  const input = normalize(normalizedConversation.normalized)
   const lead = options.lead || {}
   const forcedType = OBJECTION_TYPES.includes(options.objectionType) ? options.objectionType : ''
   let detected = forcedType ? { type: forcedType, score: 9 } : detectType(input)
@@ -124,5 +126,6 @@ export function analyzeSalesStatement(statement, options = {}) {
     goal: coaching[3],
     avoid: coaching[4],
     recommendedAction: coaching[5],
+    detectedIntents: normalizedConversation.concepts,
   }
 }

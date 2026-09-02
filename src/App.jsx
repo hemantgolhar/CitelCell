@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import './App.css'
 import BottomNavigation from './components/BottomNavigation'
+import SalesCoach from './components/SalesCoach'
 import FollowUps from './pages/FollowUps'
 import Home from './pages/Home'
 import Leads from './pages/Leads'
@@ -161,9 +162,11 @@ function App() {
     pageContent = <FollowUps leads={leads} activities={activities} isLoading={isLoadingLeads} onComplete={finishFollowUp} onReschedule={moveFollowUp} onOpenLead={openLeadDetail} />
   } else if (activePage === 'pipeline') {
     pageContent = <Pipeline leads={leads} isLoading={isLoadingLeads} onOpenLead={openLeadDetail} onMoveStage={(lead, stage) => savePipelineChange(() => moveLeadStage(lead, stage), 'Unable to move lead.')} onMarkWon={(lead, products, note) => savePipelineChange(() => markLeadWon(lead, products, note), 'Unable to mark lead won.')} onMarkLost={(lead, reason, note) => savePipelineChange(() => markLeadLost(lead, reason, note), 'Unable to mark lead lost.')} />
+  } else if (activePage === 'coach') {
+    pageContent = <SalesCoach onBack={() => navigate('dashboard')} />
   } else {
     pageContent = activePage === 'dashboard'
-      ? <Home leads={leads} activities={activities} onOpenLead={openLeadDetail} onOpenSettings={() => navigate('settings')} onAddLead={openAddLead} onOpenFollowUps={() => navigate('followups')} />
+      ? <Home leads={leads} activities={activities} onOpenLead={openLeadDetail} onOpenSettings={() => navigate('settings')} onAddLead={openAddLead} onOpenFollowUps={() => navigate('followups')} onOpenSalesCoach={() => navigate('coach')} />
       : <Reports />
   }
 
@@ -172,7 +175,7 @@ function App() {
       {pageContent}
       <PwaStatus />
       {databaseError && <div className="database-error" role="alert">{databaseError}</div>}
-      {activePage !== 'settings' && !['add', 'edit', 'detail', 'closing', 'coach'].includes(leadView) && (
+      {!['settings', 'coach'].includes(activePage) && !['add', 'edit', 'detail', 'closing'].includes(leadView) && (
         <button className="add-lead-button" type="button" onClick={openAddLead}>
           <span aria-hidden="true">＋</span> Add Lead
         </button>

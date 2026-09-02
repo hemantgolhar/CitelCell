@@ -1,9 +1,10 @@
 import { getProducts } from '../utils/pipeline.js'
+import { normalizeSalesConversation } from './salesLanguageNormalizer.js'
 
 export const CONVERSATION_STAGES = ['OPENING', 'DISCOVERY', 'PROBLEM_FOUND', 'VALUE_BUILDING', 'OBJECTION', 'BUYING_SIGNAL', 'NEGOTIATION', 'CLOSING']
 
 const BUYING_SIGNALS = {
-  strong: [/(?:how do we start|how can we start|payment.*(?:how|kaise|कसे|कैसे)|tomorrow.*install|install.*tomorrow|उद्या.*(?:install|setup)|कल.*(?:install|setup)|place (?:the )?order|ready to (?:start|buy)|invoice|agreement)/i],
+  strong: [/(?:how do we start|how can we start|payment.*(?:how|kaise|कसे|कैसे)|(?:tomorrow|उद्या|कल|kal).*(?:install|setup)|(?:install|setup).*(?:tomorrow|उद्या|कल|kal)|place (?:the )?order|ready to (?:start|buy)|invoice|agreement)/i],
   medium: [/(?:setup|install|delivery).*(?:how long|when|time|kitne din|किती वेळ|कितने दिन)|(?:kitne din|किती वेळ|कितने दिन).*(?:setup|install|delivery)|can we customize|customi[sz]|metal card.*(?:available|hai|आहे)|available.*metal card|what.*next step|next step.*(?:kya|काय|what)/i],
   weak: [/(?:demo|details|brochure|example|sample|features?|plan|package).*(?:send|show|share|dikh|पाठव|दाखव)|(?:interested|interesting|useful|acha hai|छान आहे|अच्छा है)/i],
 }
@@ -62,11 +63,10 @@ const GENERIC = {
 
 function normalize(value = '') { return String(value).replace(/\s+/g, ' ').trim() }
 function indexForLanguage(language) { return language === 'Hindi' ? 1 : language === 'Marathi' ? 2 : 0 }
-function pretty(value) { return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) }
 function detectResponseLanguage(text, requested, fallback) {
   if (['Marathi', 'Hindi', 'English'].includes(requested)) return requested
-  if (/(?:आहे|नाही|सध्या|किती|करता|झाल|aahe|jasta|garaj|vichar|nantar|kasa|kiti)/i.test(text)) return 'Marathi'
-  if (/(?:है|नहीं|अभी|कितने|करना|पड़ेगा|hai|abhi|kitne|karna|sakte|padega|kaise)/i.test(text)) return 'Hindi'
+  if (/(?:आहे|नाही|सध्या|किती|करता|झाल|उद्या|aahe|jasta|garaj|vichar|nantar|kasa|kiti|sobat|karto|kartey|pathva|var|shakta)/i.test(text)) return 'Marathi'
+  if (/(?:है|नहीं|अभी|कितने|करना|पड़ेगा|hai|abhi|kitne|kitna|karna|sakte|padega|kaise|dogo|doge)/i.test(text)) return 'Hindi'
   return fallback || 'English'
 }
 
@@ -96,6 +96,13 @@ function questionStep(stage) {
   return 'situation'
 }
 
+function spinTechnique(step) {
+  if (step === 'problem') return 'SPIN Problem Question'
+  if (step === 'implication') return 'SPIN Implication Question'
+  if (step === 'value') return 'Need-Payoff Question'
+  return 'SPIN Situation Question'
+}
+
 function closingQuestion(language, product) {
   if (language === 'Marathi') return `${product || 'हे solution'} सुरू करण्यासाठी पुढची योग्य step ठरवूया का?`
   if (language === 'Hindi') return `${product || 'यह solution'} शुरू करने के लिए अगला सही step तय करें?`
@@ -108,8 +115,31 @@ function rootCauseQuestion(language) {
   return 'Is the main concern price, usefulness, or timing?'
 }
 
+function phrase(language, english, hindi, marathi) {
+  return language === 'Marathi' ? marathi : language === 'Hindi' ? hindi : english
+}
+
+function productValue(product, language) {
+  const values = {
+    'Smart Menu': ['menu updates', 'menu updates', 'menu updates'],
+    'Google Review Card': ['the review process', 'review process', 'review process'],
+    'Aura Smart Business Card': ['sharing your details', 'details share करना', 'details share करणं'],
+    'Citeltech POS': ['billing operations', 'billing process', 'billing process'],
+    'Citelflow.ai': ['follow-up consistency', 'follow-up consistency', 'follow-up consistency'],
+  }
+  return (values[product] || ['this process', 'इस process', 'या process'])[indexForLanguage(language)]
+}
+
+function commitmentQuestion(language, product) {
+  return phrase(language,
+    `If the value of ${product || 'this solution'} is clear, would you be comfortable moving forward today?`,
+    `अगर ${product || 'इस solution'} की value clear हो जाए, तो आज आगे बढ़ना comfortable रहेगा?`,
+    `${product || 'या solution'} ची value clear झाली तर आज पुढे जायला comfortable असाल का?`)
+}
+
 export function analyzeSalesBrain(statement, options = {}) {
-  const text = normalize(statement)
+  const normalizedConversation = normalizeSalesConversation(statement)
+  const text = normalize(normalizedConversation.normalized)
   const lead = options.lead || {}
   const objection = options.objection || { objectionType: 'GENERAL', responseLanguage: 'English' }
   const language = detectResponseLanguage(text, options.responseLanguage, objection.responseLanguage)
@@ -120,13 +150,18 @@ export function analyzeSalesBrain(statement, options = {}) {
   const rootCause = ROOT_CAUSES[objection.objectionType] || (objection.objectionType === 'THINK_ABOUT_IT' ? 'UNCLEAR' : 'NONE')
   const productQuestions = PRODUCT_QUESTIONS[product] || GENERIC
   const step = questionStep(stage)
-  let technique = `${pretty(step)} / SPIN`
+  let technique = spinTechnique(step)
   let bestMove = 'Ask a question'
   let askNext = productQuestions[step][indexForLanguage(language)]
   let why = stage === 'DISCOVERY' ? 'Find the real operational problem before presenting value.' : 'Move the conversation forward with one relevant question.'
   let avoid = 'Do not overload the customer with features.'
   let nextAction = 'Continue discovery'
   let warning = ''
+  let punchLine = phrase(language,
+    `Let’s first understand what would improve ${productValue(product, language)} for you.`,
+    `पहले समझते हैं कि ${productValue(product, language)} में आपके लिए क्या improve होना चाहिए।`,
+    `आधी समजून घेऊया की ${productValue(product, language)} मध्ये तुमच्यासाठी काय improve व्हायला हवं.`)
+  let closingMove = 'Identify one meaningful problem.'
 
   if (rootCause === 'UNCLEAR') {
     technique = 'Objection clarification'
@@ -135,13 +170,23 @@ export function analyzeSalesBrain(statement, options = {}) {
     avoid = 'Do not answer an objection you have not identified.'
     nextAction = 'Clarify the root cause'
     warning = 'Clarify the real objection first'
+    punchLine = rootCauseQuestion(language)
+    closingMove = 'Identify the real concern without pressuring the customer.'
   } else if (decisionMaker === 'Not Reached') {
     technique = 'Decision process discovery'
-    askNext = objection.nextQuestion
+    askNext = phrase(language,
+      'What specific time would be suitable for a short conversation with the decision-maker?',
+      'Decision-maker से short conversation के लिए कौन-सा specific time सही रहेगा?',
+      'Decision-maker सोबत short conversation साठी कोणती specific वेळ योग्य राहील?')
     why = 'Understand who decides and secure a useful next conversation.'
     avoid = 'Do not keep pitching without the decision-maker.'
     nextAction = 'Reach the decision-maker'
     warning = 'Decision maker not identified'
+    punchLine = phrase(language,
+      'When is the decision-maker usually available? I can give them a five-minute overview.',
+      'Decision-maker usually कब available रहते हैं? मैं उन्हें five-minute overview दे दूँगा।',
+      'Decision-maker usually कधी available असतात? मी त्यांना five-minute overview देतो.')
+    closingMove = 'Get a specific time with the decision-maker.'
   } else if (buyingSignal === 'Strong') {
     technique = 'Commitment close'
     bestMove = 'Move to the next commitment'
@@ -150,6 +195,26 @@ export function analyzeSalesBrain(statement, options = {}) {
     avoid = 'Stop over-explaining and do not restart the full pitch.'
     nextAction = 'Confirm the next step'
     warning = 'Customer gave a buying signal — move forward'
+    punchLine = phrase(language,
+      `Absolutely — shall we confirm the next step for ${product || 'this solution'}?`,
+      `बिल्कुल — ${product || 'इस solution'} का next step confirm कर दें?`,
+      `नक्की — ${product || 'या solution'} ची next step confirm करूया का?`)
+    closingMove = 'Ask for confirmation.'
+    technique = /(?:tomorrow|उद्या|कल|kal).*(?:setup|install)|(?:setup|install).*(?:tomorrow|उद्या|कल|kal)/i.test(text) ? 'Assumptive Next-Step Close' : 'Commitment Close'
+  } else if (buyingSignal !== 'None') {
+    technique = 'Trial Close'
+    punchLine = objection.objectionType === 'SEND_DETAILS' ? phrase(language,
+      `Sure. Which part of ${product || 'the solution'} should I send first?`,
+      `ज़रूर। ${product || 'solution'} का कौन-सा part पहले भेजूँ?`,
+      `नक्की. ${product || 'solution'} मधला कोणता part आधी पाठवू?`) : phrase(language,
+      `It sounds relevant—shall we focus on the part of ${product || 'the solution'} that matters most to you?`,
+      `यह relevant लग रहा है—${product || 'solution'} का सबसे important part पहले देखें?`,
+      `हे relevant वाटतंय—${product || 'solution'} मधला सर्वात महत्त्वाचा भाग आधी पाहूया का?`)
+    askNext = objection.objectionType === 'SEND_DETAILS' ? phrase(language,
+      'After you review it, when should I follow up?',
+      'Details देखने के बाद मैं कब follow up करूँ?',
+      'Details पाहिल्यावर मी कधी follow up करू?') : askNext
+    closingMove = objection.objectionType === 'SEND_DETAILS' ? 'Agree on what to send and a specific follow-up time.' : 'Seek permission for the next concrete step.'
   } else if (stage === 'OBJECTION') {
     technique = 'Root-cause clarification'
     askNext = objection.nextQuestion
@@ -157,10 +222,61 @@ export function analyzeSalesBrain(statement, options = {}) {
     avoid = objection.avoid
     nextAction = objection.recommendedAction
     warning = objection.objectionType === 'PRICE' || DISCOUNT.test(text) ? "Don't discount yet" : 'Ask a question instead of continuing the pitch'
+    punchLine = objection.suggestedResponse
+    closingMove = 'Confirm the real barrier before presenting value.'
+    if (objection.objectionType === 'PRICE') {
+      technique = 'Objection Isolation'
+      punchLine = phrase(language,
+        `Apart from price, is there any other concern about ${product || 'the solution'}?`,
+        `Price के अलावा ${product || 'solution'} को लेकर कोई और concern है?`,
+        `Price सोडला तर ${product || 'product'} मध्ये अजून काही concern आहे का?`)
+      askNext = commitmentQuestion(language, product)
+      closingMove = 'Confirm whether price is the only barrier.'
+    } else if (objection.objectionType === 'NO_BUDGET') {
+      technique = 'Value Reframe'
+    } else if (objection.objectionType === 'NO_NEED') {
+      technique = 'Challenger-style Insight'
+    } else if (objection.objectionType === 'TRUST') {
+      technique = 'Ethical Social Proof suggestion'
+      closingMove = 'Offer only a genuine, relevant reference or verifiable demonstration.'
+    } else if (objection.objectionType === 'CALL_LATER') {
+      technique = 'Alternative Choice Close'
+      closingMove = 'Offer two specific callback windows.'
+    }
   } else if (DISCOUNT.test(text)) {
     warning = "Don't discount yet"
+    technique = 'Discount Defense'
+    punchLine = phrase(language,
+      'If we finalize the price, are you ready to proceed today?',
+      'Price finalize हो गया तो आज proceed करने का decision है?',
+      'Price finalize झाला तर आज proceed करायचा decision आहे का?')
+    askNext = commitmentQuestion(language, product)
+    closingMove = 'Confirm purchase intent before negotiating.'
   } else if (stage === 'OPENING') {
     warning = 'Discover the problem before pitching'
+  }
+
+  if (normalizedConversation.concepts.includes('COMPETITOR') && buyingSignal !== 'Strong') {
+    technique = 'Competitive Reframe'
+    punchLine = phrase(language,
+      'That makes sense—what would you most like the current system to do better?',
+      'ठीक है—current system में सबसे जरूरी improvement क्या चाहिए?',
+      'ठीक आहे—current system मध्ये सर्वात महत्त्वाची सुधारणा कोणती हवी?')
+    askNext = productQuestions.problem[indexForLanguage(language)]
+    closingMove = 'Agree on the gap the current option does not solve.'
+    why = 'Compare against the customer’s priorities, not against claims.'
+    avoid = 'Do not criticize the competitor or invent comparisons.'
+  }
+
+  if (normalizedConversation.concepts.includes('DISCOUNT') && buyingSignal !== 'Strong') {
+    technique = 'Discount Defense'
+    punchLine = phrase(language,
+      'If we finalize the price, are you ready to proceed today?',
+      'Price finalize हो गया तो आज proceed करने का decision है?',
+      'Price finalize झाला तर आज proceed करायचा decision आहे का?')
+    askNext = commitmentQuestion(language, product)
+    closingMove = 'Confirm purchase intent before negotiating.'
+    warning = "Don't discount yet"
   }
 
   return {
@@ -176,6 +292,13 @@ export function analyzeSalesBrain(statement, options = {}) {
     avoid,
     nextAction,
     warning,
+    punchLine,
+    closingMove,
+    detectedIntent: [...new Set([
+      ...normalizedConversation.concepts,
+      objection.objectionType !== 'GENERAL' ? objection.objectionType : '',
+      buyingSignal === 'Strong' ? 'BUYING_SIGNAL' : '',
+    ].filter(Boolean))].join(' + ') || 'GENERAL',
     product: product || 'General',
     responseLanguage: language,
   }
