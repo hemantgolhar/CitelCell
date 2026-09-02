@@ -31,7 +31,7 @@ const PURPOSES = {
 }
 
 const LADDERS = {
-  PRICE_VALUE: ['Objection Isolation', 'Value Discovery', 'Cost-of-Problem', 'Decision Criteria', 'Contrast Reframe', 'Value Reframe', 'Trial Close', 'Graceful Disqualification'],
+  PRICE_VALUE: ['Objection Isolation', 'Value Discovery', 'Trial Close', 'Cost-of-Problem', 'Decision Criteria', 'Value Reframe', 'Summary Close', 'Graceful Disqualification'],
   THINK_ABOUT_IT: ['Root-Cause Clarification', 'Objection Isolation', 'Decision Criteria', 'Proof/Risk Reduction', 'Value Reframe', 'Summary Close', 'Alternative Choice', 'Graceful Disqualification'],
   NO_NEED: ['SPIN Situation', 'SPIN Problem', 'Challenger-style Insight', 'SPIN Implication', 'Need-Payoff', 'Decision Criteria', 'Trial Close', 'Graceful Disqualification'],
   STATUS_QUO: ['SPIN Situation', 'Status-Quo Reframe', 'SPIN Problem', 'Consequence Question', 'Cost-of-Problem', 'Need-Payoff', 'Trial Close', 'Graceful Disqualification'],
@@ -71,11 +71,11 @@ function mixedLines(intent, step, product) {
     PRICE_VALUE: [
       [`Fair point. Price बाजूला ठेवला तर बाकी solution बद्दल काही concern आहे का?`, `Value clear झाली तर price हा एकटाच concern राहील का?`, 'Confirm whether price is the only barrier.'],
       [`समजलं. जास्त वाटण्याचं main reason काय—use कमी वाटतोय की return clear नाही?`, `तुमच्यासाठी हा पैसा worth ठरायला नेमकं काय मिळालं पाहिजे?`, 'Define the value the customer expects.'],
+      [`Value समजली आणि price हाच उरलेला concern असेल, तर योग्य figure वर पुढे जाऊ शकतो का?`, `बाकी कोणता blocker आहे?`, 'Test commitment before negotiating.'],
       [`एक विचारू? आज ${process} मध्ये ${friction} मुळे काय cost किंवा effort जातो?`, `हा current effort तसाच राहिला तर काय impact होईल?`, 'Quantify the cost of the current problem.'],
       [`Fair. तुमच्या decision चे top two criteria कोणते आहेत?`, `Price व्यतिरिक्त कोणता result must-have आहे?`, 'Agree on clear decision criteria.'],
-      [`₹ figure आणि actual use वेगळे पाहूया—${outcome} तुमच्यासाठी किती relevant आहे?`, `Current option आणि हा option compare करताना काय महत्त्वाचं आहे?`, 'Compare using the customer’s priorities.'],
       [`जर ${outcome} solve होत असेल, तर price कडे पाहण्याची picture बदलते का?`, `Value कुठे कमी वाटते ते सांगाल?`, 'Reframe price around a relevant outcome.'],
-      [`जर value price justify करत असेल, तर पुढे जायला comfortable आहात का?`, `बाकी काही blocker आहे का?`, 'Test commitment without offering a discount.'],
+      [`Need, value आणि use clear आहेत. आता फक्त योग्य next step confirm करायची आहे.`, `Price clear झाला तर proceed करू शकतो का?`, 'Summarize value and confirm the remaining barrier.'],
       [`समजलं. हा budget fit नसेल तर force करू नका—योग्य range काय आहे?`, `हा timing issue आहे की solution fit नाही?`, 'Qualify or disengage respectfully.'],
     ],
     THINK_ABOUT_IT: [
