@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { analyzeSalesStatement } from '../services/salesCoach'
 import { getProducts } from '../utils/pipeline'
+import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 
 const languages = ['Auto', 'Marathi', 'Hindi', 'English']
+const recognitionLanguages = ['Auto / Mixed', 'Marathi', 'Hindi', 'English']
 const quickObjections = [
   ['PRICE', 'Price'], ['THINK_ABOUT_IT', 'Think About It'], ['NO_NEED', 'No Need'],
   ['OWNER_UNAVAILABLE', 'Owner Unavailable'], ['CALL_LATER', 'Call Later'], ['SEND_DETAILS', 'Send Details'],
@@ -11,8 +13,16 @@ const quickObjections = [
 function SalesCoach({ lead, onBack }) {
   const [statement, setStatement] = useState('')
   const [responseLanguage, setResponseLanguage] = useState('Auto')
+  const [recognitionLanguage, setRecognitionLanguage] = useState('Auto / Mixed')
   const [result, setResult] = useState(null)
   const products = getProducts(lead)
+
+  const handleRecognizedSpeech = (text) => {
+    setStatement((current) => `${current.trim()} ${text}`.trim().slice(-1200))
+    setResult(analyzeSalesStatement(text, { lead, responseLanguage }))
+  }
+
+  const speech = useSpeechRecognition({ language: recognitionLanguage, onFinalTranscript: handleRecognizedSpeech })
 
   const analyze = (objectionType = '') => {
     if (!statement.trim() && !objectionType) return
@@ -36,6 +46,14 @@ function SalesCoach({ lead, onBack }) {
     <section className="coach-input-card">
       <div className="coach-card-heading"><div><p>Sales Coach</p><h2>What did the customer say?</h2></div><label>Response language<select value={responseLanguage} onChange={(event) => { setResponseLanguage(event.target.value); setResult(null) }}>{languages.map((language) => <option key={language}>{language}</option>)}</select></label></div>
       <label className="coach-statement">Customer said:<textarea rows="5" value={statement} onChange={(event) => { setStatement(event.target.value); setResult(null) }} placeholder="Type the customer's exact words…" /></label>
+      <div className="coach-microphone">
+        <div className="coach-mic-settings"><label>Recognition language<select value={recognitionLanguage} disabled={speech.active} onChange={(event) => setRecognitionLanguage(event.target.value)}>{recognitionLanguages.map((language) => <option key={language}>{language}</option>)}</select></label><div className={speech.active ? 'listening' : ''}><span aria-hidden="true">●</span><strong>{speech.status}</strong></div></div>
+        {speech.interimTranscript && <div className="coach-interim"><span>Hearing now</span><p>{speech.interimTranscript}</p></div>}
+        {speech.error && <p className="coach-mic-error" role="alert">{speech.error}</p>}
+        {!speech.supported && <p className="coach-mic-unsupported">Speech recognition is not supported in this browser. Manual input and quick objections still work.</p>}
+        <button className={speech.active ? 'coach-listen stop' : 'coach-listen'} type="button" disabled={!speech.supported} onClick={speech.active ? speech.stopListening : speech.startListening}>{speech.active ? '■ Stop Listening' : '🎙 Start Listening'}</button>
+        <small>Auto / Mixed uses your browser or device recognition language ({speech.recognitionLanguageCode}). Browser-native recognition can understand some mixed speech, but it cannot guarantee perfect automatic multilingual detection.</small>
+      </div>
       <button className="coach-analyze" type="button" disabled={!statement.trim()} onClick={() => analyze()}>Analyze</button>
       <div className="coach-quick"><span>Quick objections</span><div>{quickObjections.map(([type, label]) => <button key={type} type="button" onClick={() => handleQuickObjection(type, label)}>{label}</button>)}</div></div>
     </section>
@@ -49,7 +67,8 @@ function SalesCoach({ lead, onBack }) {
     </section>}
 
     {!result && <section className="coach-empty"><span aria-hidden="true">◎</span><strong>Ready when you are</strong><p>Type the customer’s words or choose a quick objection for short, practical coaching.</p></section>}
-    <p className="coach-safety">Suggestions only. Nothing is contacted, sent, recorded, scheduled, or changed automatically.</p>
+    <p className="coach-privacy">Live coaching only. CitelCell does not intentionally save audio.</p>
+    <p className="coach-safety">Suggestions only. No transcript is saved to CitelCell, and nothing is contacted, sent, scheduled, or changed automatically.</p>
   </main>
 }
 
