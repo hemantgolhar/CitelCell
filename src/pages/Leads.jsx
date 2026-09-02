@@ -4,6 +4,7 @@ import LeadForm from '../components/LeadForm'
 import FollowUpAssistant from '../components/FollowUpAssistant'
 import DealClosingForm from '../components/DealClosingForm'
 import CustomerSaleDetails from '../components/CustomerSaleDetails'
+import SalesCoach from '../components/SalesCoach'
 import { formatFollowUp } from '../utils/formatters'
 import { formatCurrency, getPotentialValue, getProducts, PIPELINE_STAGES, PRODUCT_OPTIONS } from '../utils/pipeline'
 
@@ -28,6 +29,7 @@ function Leads({ leads, activities, isLoading, view, selectedLeadId, onViewChang
   if (view === 'add') return <LeadForm onSave={onSaveLead} onCancel={() => onViewChange('list')} />
   if (view === 'edit' && selectedLead) return <LeadForm lead={selectedLead} onSave={onSaveLead} onCancel={() => onViewChange('detail')} />
   if (view === 'closing' && selectedLead) return <DealClosingForm lead={selectedLead} onSave={(details) => onSaveClosing(selectedLead, details)} onCancel={() => onViewChange('detail')} />
+  if (view === 'coach' && selectedLead) return <SalesCoach lead={selectedLead} onBack={() => onViewChange('detail')} />
 
   if (view === 'detail' && selectedLead) {
     const websiteUrl = selectedLead.website && /^https?:\/\//i.test(selectedLead.website) ? selectedLead.website : selectedLead.website ? `https://${selectedLead.website}` : ''
@@ -39,6 +41,7 @@ function Leads({ leads, activities, isLoading, view, selectedLeadId, onViewChang
       <main className="page lead-detail-page">
         <header className="form-header"><button className="back-button" type="button" onClick={() => onViewChange('list')} aria-label="Back to leads">‹</button><div><p className="eyebrow">Lead details</p><h1>{selectedLead.businessName}</h1></div></header>
         <button className="deal-top-action" type="button" onClick={() => onViewChange('closing')}><span aria-hidden="true">✓</span><span><strong>{selectedLead.closingDetails ? 'Edit Customer Details' : selectedLead.pipelineStage === 'Won' ? 'Add Customer Details' : 'Close Deal'}</strong><small>{selectedLead.closingDetails ? 'Update this saved customer and sale record' : 'Capture customer, payment and fulfilment details'}</small></span><b aria-hidden="true">›</b></button>
+        {!['Won', 'Lost'].includes(selectedLead.pipelineStage) && <button className="sales-coach-action" type="button" onClick={() => onViewChange('coach')}><span aria-hidden="true">SC</span><span><strong>Sales Coach</strong><small>Get live objection guidance while you talk</small></span><b aria-hidden="true">›</b></button>}
         <section className="detail-card">
           <div className="detail-identity"><span className="lead-avatar large" aria-hidden="true">{selectedLead.businessName.slice(0, 2).toUpperCase()}</span><div><h2>{selectedLead.contactName}</h2><p>{selectedLead.designation || getProducts(selectedLead).join(', ')}</p></div><span className="pipeline-stage-badge">{selectedLead.pipelineStage}</span></div>
           <dl className="detail-list">

@@ -172,7 +172,7 @@ function App() {
       {pageContent}
       <PwaStatus />
       {databaseError && <div className="database-error" role="alert">{databaseError}</div>}
-      {activePage !== 'settings' && !['add', 'edit', 'detail', 'closing'].includes(leadView) && (
+      {activePage !== 'settings' && !['add', 'edit', 'detail', 'closing', 'coach'].includes(leadView) && (
         <button className="add-lead-button" type="button" onClick={openAddLead}>
           <span aria-hidden="true">＋</span> Add Lead
         </button>
