@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { analyzeSalesStatement } from '../services/salesCoach'
 import { analyzeSalesBrain } from '../services/salesBrain'
 import { getProducts } from '../utils/pipeline'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
+import { classifySalesIntent, classifySalesIntentFallback, getSemanticModelStatus } from '../services/semanticSalesClassifier'
 
 const languages = ['Auto', 'Marathi', 'Hindi', 'English']
 const recognitionLanguages = ['Auto / Mixed', 'Marathi', 'Hindi', 'English']
@@ -18,35 +19,109 @@ function SalesCoach({ lead = {}, onBack }) {
   const [recognitionLanguage, setRecognitionLanguage] = useState('Auto / Mixed')
   const [result, setResult] = useState(null)
   const [brain, setBrain] = useState(null)
+  const [turns, setTurns] = useState([])
+  const [sessionActive, setSessionActive] = useState(true)
+  const [semanticStatus, setSemanticStatus] = useState('idle')
+  const turnsRef = useRef([])
+  const brainRef = useRef(null)
+  const analysisSequenceRef = useRef(0)
+  const interimTimerRef = useRef(null)
+  const runCoachRef = useRef(null)
   const leadProducts = getProducts(lead)
   const [selectedProduct, setSelectedProduct] = useState(leadProducts[0] || 'General')
   const hasLead = Boolean(lead.id)
   const effectiveLead = hasLead || selectedProduct === 'General' ? lead : { productsInterested: [selectedProduct] }
   const products = getProducts(effectiveLead)
 
-  const runCoach = (text, objectionType = '') => {
-    const coaching = analyzeSalesStatement(text, { lead: effectiveLead, responseLanguage, objectionType })
+  const signalStrength = (value) => ({ None: 0, Weak: 1, Medium: 2, Strong: 3 }[value] || 0)
+
+  const shouldShowInterim = (nextBrain) => {
+    const current = brainRef.current
+    if (!current) return true
+    const currentIntent = current.semanticIntents?.[0]?.intent || current.detectedIntent
+    const nextIntent = nextBrain.semanticIntents?.[0]?.intent || nextBrain.detectedIntent
+    return currentIntent !== nextIntent
+      || signalStrength(nextBrain.buyingSignal) > signalStrength(current.buyingSignal)
+      || (nextBrain.semanticConfidence || 0) >= (current.semanticConfidence || 0) + 0.12
+  }
+
+  const showCoaching = (coaching, nextBrain, final) => {
+    if (!final && !shouldShowInterim(nextBrain)) return
+    brainRef.current = nextBrain
     setResult(coaching)
-    setBrain(analyzeSalesBrain(text, { lead: effectiveLead, objection: coaching, responseLanguage }))
+    setBrain(nextBrain)
+  }
+
+  const updateTurns = (nextTurns) => {
+    const bounded = nextTurns.slice(-12)
+    turnsRef.current = bounded
+    setTurns(bounded)
+    return bounded
+  }
+
+  const runCoach = (text, objectionType = '', { final = false } = {}) => {
+    const cleanText = text.trim()
+    if (!cleanText) return
+    const sequence = ++analysisSequenceRef.current
+    const coaching = analyzeSalesStatement(text, { lead: effectiveLead, responseLanguage, objectionType })
+    const fallbackIntents = classifySalesIntentFallback(cleanText)
+    const turnId = final ? `customer-turn-${sequence}` : ''
+    const recentTurns = final
+      ? updateTurns([...turnsRef.current, { id: turnId, speaker: 'customer', text: cleanText, timestamp: sequence, final: true, intents: fallbackIntents, objection: coaching.objectionType, buyingSignal: 'None' }])
+      : turnsRef.current
+    const fallbackBrain = analyzeSalesBrain(cleanText, { lead: effectiveLead, objection: coaching, responseLanguage, semanticIntents: fallbackIntents, context: { latestTurn: recentTurns.at(-1), recentTurns } })
+    if (final && turnId) updateTurns(recentTurns.map((turn) => turn.id === turnId ? { ...turn, buyingSignal: fallbackBrain.buyingSignal } : turn))
+    showCoaching(coaching, fallbackBrain, final)
+
+    const modelStatus = getSemanticModelStatus()
+    if (modelStatus.state !== 'failed') setSemanticStatus(modelStatus.state === 'ready' ? 'ready' : 'loading')
+    classifySalesIntent(cleanText).then((semanticIntents) => {
+      if (sequence !== analysisSequenceRef.current && !final) return
+      const currentTurns = turnId
+        ? updateTurns(turnsRef.current.map((turn) => turn.id === turnId ? { ...turn, intents: semanticIntents } : turn))
+        : turnsRef.current
+      const semanticBrain = analyzeSalesBrain(cleanText, { lead: effectiveLead, objection: coaching, responseLanguage, semanticIntents, context: { latestTurn: currentTurns.at(-1), recentTurns: currentTurns } })
+      if (turnId) updateTurns(currentTurns.map((turn) => turn.id === turnId ? { ...turn, buyingSignal: semanticBrain.buyingSignal } : turn))
+      setSemanticStatus(getSemanticModelStatus().state)
+      if (sequence === analysisSequenceRef.current) showCoaching(coaching, semanticBrain, final)
+    })
   }
 
   const handleRecognizedSpeech = (text) => {
-    const transcript = `${statement.trim()} ${text}`.trim().slice(-1200)
-    setStatement(transcript)
-    runCoach(transcript)
+    setStatement(text)
+    runCoach(text, '', { final: true })
   }
 
   const speech = useSpeechRecognition({ language: recognitionLanguage, onFinalTranscript: handleRecognizedSpeech })
 
   const analyze = (objectionType = '') => {
     if (!statement.trim() && !objectionType) return
-    runCoach(statement, objectionType)
+    runCoach(statement, objectionType, { final: true })
   }
 
   const handleQuickObjection = (objectionType, label) => {
     setStatement(label)
-    runCoach(label, objectionType)
+    runCoach(label, objectionType, { final: true })
   }
+
+  const resetSession = (active = true) => {
+    analysisSequenceRef.current += 1
+    updateTurns([])
+    brainRef.current = null
+    setBrain(null)
+    setResult(null)
+    setStatement('')
+    setSessionActive(active)
+  }
+
+  useEffect(() => { runCoachRef.current = runCoach })
+
+  useEffect(() => {
+    if (interimTimerRef.current) window.clearTimeout(interimTimerRef.current)
+    if (!speech.active || !speech.interimTranscript.trim()) return undefined
+    interimTimerRef.current = window.setTimeout(() => runCoachRef.current?.(speech.interimTranscript, '', { final: false }), 425)
+    return () => window.clearTimeout(interimTimerRef.current)
+  }, [speech.active, speech.interimTranscript])
 
   return <main className="page sales-coach-page">
     <header className="form-header"><button className="back-button" type="button" onClick={onBack} aria-label="Back to lead details">‹</button><div><p className="eyebrow">Live conversation support</p><h1>Sales Coach</h1></div></header>
@@ -56,6 +131,9 @@ function SalesCoach({ lead = {}, onBack }) {
       <div><strong>{lead.contactName || lead.businessName || 'Standalone coaching'}</strong><small>{[products.join(', ') || 'General', lead.pipelineStage].filter(Boolean).join(' · ')}</small></div>
       <b>Offline</b>
     </section>
+    <section className="coach-session-bar"><div><strong>{sessionActive ? 'Live session active' : 'Session cleared'}</strong><small>{turns.length} finalized customer turns · memory stays on this screen only</small></div><button type="button" onClick={() => resetSession(true)}>Start Session</button><button type="button" onClick={() => resetSession(sessionActive)}>Clear Session</button></section>
+    {semanticStatus === 'loading' && <div className="coach-model-status">Preparing Sales Brain… Immediate rule-based coaching remains available.</div>}
+    {semanticStatus === 'failed' && <div className="coach-model-status fallback">Semantic model unavailable. Using local fallback coaching.</div>}
 
     <section className="coach-input-card">
       <div className="coach-card-heading"><div><p>Sales Coach</p><h2>What did the customer say?</h2></div><label>Response language<select value={responseLanguage} onChange={(event) => { setResponseLanguage(event.target.value); setResult(null); setBrain(null) }}>{languages.map((language) => <option key={language}>{language}</option>)}</select></label></div>
@@ -74,12 +152,12 @@ function SalesCoach({ lead = {}, onBack }) {
     </section>
 
     {result && brain && <section className="coach-result coach-brain" aria-live="polite">
-      <div className="brain-title"><div><span>Sales Brain</span><strong>{brain.product}</strong></div>{brain.buyingSignal === 'Strong' && <b>🔥 BUYING SIGNAL</b>}</div>
+      <div className="brain-title"><div><span>Sales Brain</span><strong>{brain.product} · {turns.length} turns</strong></div>{brain.buyingSignal === 'Strong' && <b>🔥 BUYING SIGNAL</b>}</div>
       <div className="brain-summary"><div><span>Conversation Stage</span><strong>{brain.stage.replaceAll('_', ' ')}</strong></div><div><span>Customer Signal</span><strong>{brain.customerSignal}</strong></div><div><span>Technique</span><strong>{brain.technique}</strong></div></div>
       {brain.warning && <div className="brain-warning">⚠ {brain.warning}</div>}
-      <article className="brain-punch"><span>🔥 Punch Line</span><p>{brain.punchLine}</p></article>
+      <article className="brain-punch"><span>🔥 Say This</span><p>{brain.punchLine}</p></article>
       <article className="coach-next brain-ask"><span>❓ Ask Next</span><p>{brain.askNext}</p></article>
-      <div className="brain-details"><article><span>Technique</span><p>{brain.technique}</p></article><article><span>Closing Move</span><p>{brain.closingMove}</p></article><article><span>Why</span><p>{brain.why}</p></article><article><span>Avoid</span><p>{brain.avoid}</p></article></div>
+      <div className="brain-details"><article><span>Detected</span><p>{brain.detectedIntent}</p></article><article><span>Technique</span><p>{brain.technique}</p></article><article><span>Customer Signal</span><p>{brain.customerSignal}</p></article><article><span>Closing Move</span><p>{brain.closingMove}</p></article><article><span>Why</span><p>{brain.why}</p></article><article><span>Avoid</span><p>{brain.avoid}</p></article></div>
       {brain.decisionMaker === 'Not Reached' && <div className="brain-decision"><span>Decision Maker</span><strong>Not Reached</strong></div>}
       <details className="brain-objection"><summary>Objection coaching</summary>
       <div className="coach-detected"><div><span>Detected objection</span><h2>{result.objectionType.replaceAll('_', ' ')}</h2></div><div><b className={`confidence-${result.confidence.toLowerCase()}`}>{result.confidence}</b><small>{result.responseLanguage}</small></div></div>

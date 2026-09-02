@@ -9,7 +9,7 @@ const CONCEPT_RULES = {
   DECISION_MAKER: [/(?:partner sobat|partner se|manager se|owner se|discuss karke|approval lena padega)/i],
   TIMING: [/(?:nantar|baad me|later|kal|उद्या|tomorrow|next week)/i],
   SETUP: [/(?:setup|install|installation)/i],
-  PAYMENT: [/(?:payment|pay|upi|cash|bank transfer|card payment)/i],
+  PAYMENT: [/(?:payment|\bpay\b|upi|cash|bank transfer|card payment)/i],
 }
 
 const CANONICAL = {

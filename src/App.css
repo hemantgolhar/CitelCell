@@ -1806,6 +1806,13 @@ button:focus-visible, a:focus-visible { outline: 3px solid rgba(52,120,246,.28);
 .sales-coach-action > b { font-size: 1.35rem; }
 
 .sales-coach-page { background: radial-gradient(circle at 100% 0, rgba(119,80,226,.12), transparent 19rem), #f8faff; }
+.coach-session-bar { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: .45rem; margin-bottom: .7rem; padding: .65rem .7rem; border: 1px solid #dfe4f2; border-radius: .82rem; background: rgba(255,255,255,.9); }
+.coach-session-bar > div { display: grid; min-width: 0; gap: .12rem; }
+.coach-session-bar strong { color: #4e3ba8; font-size: .62rem; }
+.coach-session-bar small { overflow: hidden; color: #7a8596; font-size: .49rem; text-overflow: ellipsis; white-space: nowrap; }
+.coach-session-bar button { min-height: 2.1rem; padding: 0 .5rem; border: 1px solid #dcd8f2; border-radius: .58rem; color: #5e49b6; background: #f6f3ff; font-size: .52rem; font-weight: 850; }
+.coach-model-status { margin: 0 0 .7rem; padding: .55rem .65rem; border-radius: .65rem; color: #6550b6; background: #f1edff; font-size: .55rem; line-height: 1.4; }
+.coach-model-status.fallback { color: #8a6220; background: #fff7e7; }
 .coach-intro { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: .7rem; margin-bottom: .8rem; padding: .7rem .8rem; border: 1px solid #e0e5f1; border-radius: .9rem; background: rgba(255,255,255,.88); box-shadow: 0 6px 18px rgba(47,65,111,.06); }
 .coach-intro > span { display: grid; width: 2.35rem; height: 2.35rem; place-items: center; border-radius: .7rem; color: #fff; background: linear-gradient(145deg, #7455e4, #3478f6); font-size: .62rem; font-weight: 900; }
 .coach-intro > div { display: grid; min-width: 0; gap: .16rem; }
@@ -1914,6 +1921,8 @@ button:focus-visible, a:focus-visible { outline: 3px solid rgba(52,120,246,.28);
   .coach-guidance { grid-template-columns: 1fr; }
   .brain-summary { grid-template-columns: 1fr; }
   .brain-details { grid-template-columns: 1fr; }
+  .coach-session-bar { grid-template-columns: 1fr 1fr; }
+  .coach-session-bar > div { grid-column: 1 / -1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

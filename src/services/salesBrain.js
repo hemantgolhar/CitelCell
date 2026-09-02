@@ -4,9 +4,9 @@ import { normalizeSalesConversation } from './salesLanguageNormalizer.js'
 export const CONVERSATION_STAGES = ['OPENING', 'DISCOVERY', 'PROBLEM_FOUND', 'VALUE_BUILDING', 'OBJECTION', 'BUYING_SIGNAL', 'NEGOTIATION', 'CLOSING']
 
 const BUYING_SIGNALS = {
-  strong: [/(?:how do we start|how can we start|payment.*(?:how|kaise|कसे|कैसे)|(?:tomorrow|उद्या|कल|kal).*(?:install|setup)|(?:install|setup).*(?:tomorrow|उद्या|कल|kal)|place (?:the )?order|ready to (?:start|buy)|invoice|agreement)/i],
+  strong: [/(?:how do (?:i|we) (?:start|pay|order)|how can we start|payment.*(?:how|kaise|कसे|कैसे)|(?:upi|qr).*(?:bhejo|send|pathva|पाठवा)|(?:tomorrow|उद्या|कल|kal).*(?:install|setup|start)|(?:install|setup|start).*(?:tomorrow|उद्या|कल|kal)|start (?:karte|karuya|करूया|करते)|place (?:the )?order|order (?:kaise|kasa|कसा)|\b\d+\s*(?:cards?|कार्ड).*(?:chahiye|पाहिजे|हवे)|ready to (?:start|buy)|invoice|agreement)/i],
   medium: [/(?:setup|install|delivery).*(?:how long|when|time|kitne din|किती वेळ|कितने दिन)|(?:kitne din|किती वेळ|कितने दिन).*(?:setup|install|delivery)|can we customize|customi[sz]|metal card.*(?:available|hai|आहे)|available.*metal card|what.*next step|next step.*(?:kya|काय|what)/i],
-  weak: [/(?:demo|details|brochure|example|sample|features?|plan|package).*(?:send|show|share|dikh|पाठव|दाखव)|(?:interested|interesting|useful|acha hai|छान आहे|अच्छा है)/i],
+  weak: [/(?:demo|details|brochure|example|sample|features?|plan|package).*(?:send|show|share|dikh|पाठव|दाखव)/i],
 }
 
 const DECISION_MAKER = /(?:owner|malik|मालक|मालकाशी|मालिक|partner|manager|boss).*(?:not available|unavailable|nahi|नाही|नहीं|discuss|decide|approval|बोलावं|बोलावे|पूछ|puch|विचार)|(?:discuss|approval|decides?).*(?:owner|partner|manager|boss)/i
@@ -144,9 +144,18 @@ export function analyzeSalesBrain(statement, options = {}) {
   const objection = options.objection || { objectionType: 'GENERAL', responseLanguage: 'English' }
   const language = detectResponseLanguage(text, options.responseLanguage, objection.responseLanguage)
   const product = getProducts(lead)[0] || ''
-  const buyingSignal = detectBuyingSignal(text)
-  const decisionMaker = DECISION_MAKER.test(text) || ['OWNER_UNAVAILABLE', 'PARTNER_APPROVAL'].includes(objection.objectionType) ? 'Not Reached' : 'Unknown'
-  const stage = detectStage(text, objection.objectionType, buyingSignal, lead)
+  const semanticIntents = Array.isArray(options.semanticIntents) ? options.semanticIntents : []
+  const semanticTop = semanticIntents[0] || { intent: 'GENERAL', confidence: 0 }
+  const recentTurns = Array.isArray(options.context?.recentTurns) ? options.context.recentTurns.slice(-12) : []
+  const previousTurn = recentTurns.length > 1 ? recentTurns.at(-2) : null
+  const previousObjection = previousTurn?.objection || 'GENERAL'
+  let buyingSignal = detectBuyingSignal(text)
+  if (buyingSignal === 'None' && semanticTop.confidence >= 0.5 && ['IMPLEMENTATION', 'CUSTOMIZATION'].includes(semanticTop.intent)) buyingSignal = 'Medium'
+  if (buyingSignal === 'None' && semanticTop.confidence >= 0.5 && semanticTop.intent === 'PAYMENT') buyingSignal = 'Strong'
+  const decisionMaker = DECISION_MAKER.test(text)
+    || ['OWNER_UNAVAILABLE', 'PARTNER_APPROVAL'].includes(objection.objectionType)
+    || ['DECISION_AUTHORITY', 'PARTNER_APPROVAL', 'OWNER_UNAVAILABLE'].includes(semanticTop.intent) ? 'Not Reached' : 'Unknown'
+  let stage = detectStage(text, objection.objectionType, buyingSignal, lead)
   const rootCause = ROOT_CAUSES[objection.objectionType] || (objection.objectionType === 'THINK_ABOUT_IT' ? 'UNCLEAR' : 'NONE')
   const productQuestions = PRODUCT_QUESTIONS[product] || GENERIC
   const step = questionStep(stage)
@@ -173,6 +182,7 @@ export function analyzeSalesBrain(statement, options = {}) {
     punchLine = rootCauseQuestion(language)
     closingMove = 'Identify the real concern without pressuring the customer.'
   } else if (decisionMaker === 'Not Reached') {
+    stage = 'OBJECTION'
     technique = 'Decision process discovery'
     askNext = phrase(language,
       'What specific time would be suitable for a short conversation with the decision-maker?',
@@ -233,7 +243,7 @@ export function analyzeSalesBrain(statement, options = {}) {
       askNext = commitmentQuestion(language, product)
       closingMove = 'Confirm whether price is the only barrier.'
     } else if (objection.objectionType === 'NO_BUDGET') {
-      technique = 'Value Reframe'
+      technique = 'Objection Isolation / Value Reframe'
     } else if (objection.objectionType === 'NO_NEED') {
       technique = 'Challenger-style Insight'
     } else if (objection.objectionType === 'TRUST') {
@@ -279,6 +289,57 @@ export function analyzeSalesBrain(statement, options = {}) {
     warning = "Don't discount yet"
   }
 
+  if (semanticTop.confidence >= 0.34 && buyingSignal !== 'Strong' && decisionMaker !== 'Not Reached') {
+    const intent = semanticTop.intent
+    if (intent === 'PRICE_VALUE') {
+      stage = 'OBJECTION'
+      technique = 'Value Reframe'
+      punchLine = phrase(language, 'Fair question—let’s check whether the value matches what you need.', 'सही सवाल है—पहले देखते हैं कि value आपकी जरूरत के हिसाब से है या नहीं।', 'योग्य प्रश्न आहे—value तुमच्या गरजेनुसार आहे का ते आधी पाहूया.')
+      askNext = phrase(language, 'Which result would make this investment worthwhile for you?', 'कौन-सा result इस investment को worthwhile बनाएगा?', 'कोणता result मिळाला तर ही investment worthwhile वाटेल?')
+      closingMove = 'Connect price to the customer’s required outcome.'
+      why = 'The concern is value received for the price, not merely the number.'
+      avoid = 'Do not defend the price before understanding expected value.'
+    } else if (intent === 'ADOPTION_CONCERN') {
+      stage = 'OBJECTION'; technique = 'Adoption Reframe'
+      punchLine = phrase(language, 'That concern is valid—let’s make the customer step simple first.', 'यह concern valid है—पहले customer का step simple रखते हैं।', 'हा concern योग्य आहे—आधी customer ची step simple ठेवूया.')
+      askNext = phrase(language, 'Where do you think customers would hesitate?', 'आपको लगता है customers कहाँ hesitate करेंगे?', 'Customers कुठे hesitate करतील असं तुम्हाला वाटतं?')
+      closingMove = 'Agree on a low-friction adoption approach.'
+    } else if (intent === 'STATUS_QUO') {
+      stage = 'DISCOVERY'; technique = 'Status-Quo Reframe'
+      punchLine = phrase(language, 'If the current process works, we should only change what creates a real improvement.', 'Current process ठीक है तो सिर्फ वही बदलेंगे जहाँ real improvement हो।', 'Current process ठीक असेल तर real improvement जिथे आहे तिथेच बदल करूया.')
+      askNext = phrase(language, 'What is the one thing you would still improve in the current process?', 'Current process में एक चीज क्या improve करना चाहेंगे?', 'Current process मध्ये एक गोष्ट कोणती improve कराल?')
+      closingMove = 'Identify one worthwhile gap before proposing change.'
+    } else if (intent === 'USABILITY') {
+      stage = 'OBJECTION'; technique = 'Proof/Risk Reduction'
+      punchLine = phrase(language, 'Your staff should feel comfortable before you commit.', 'Commit करने से पहले staff का comfortable होना जरूरी है।', 'Commit करण्याआधी staff comfortable असणं महत्त्वाचं आहे.')
+      askNext = phrase(language, 'Which part might be difficult for the team?', 'Team को कौन-सा part difficult लग सकता है?', 'Team ला कोणता part difficult वाटू शकतो?')
+      closingMove = 'Demonstrate the relevant workflow before seeking commitment.'
+    } else if (intent === 'PROOF_TRIAL' || intent === 'TRUST') {
+      stage = 'OBJECTION'; technique = 'Proof/Risk Reduction'
+      punchLine = phrase(language, 'That is reasonable—you should verify it before deciding.', 'बिल्कुल सही—decision से पहले verify करना चाहिए।', 'बरोबर आहे—decision आधी verify करणं योग्य आहे.')
+      askNext = phrase(language, 'What would you need to see in a demo to feel confident?', 'Demo में क्या देखकर confidence आएगा?', 'Demo मध्ये काय पाहिल्यावर confidence येईल?')
+      closingMove = 'Agree on a specific, verifiable demonstration.'
+    } else if (intent === 'DECISION_AUTHORITY' || intent === 'PARTNER_APPROVAL') {
+      stage = 'OBJECTION'; technique = 'Decision-Maker Close'
+      punchLine = phrase(language, 'Let’s make the next conversation useful for the person who decides.', 'Decision लेने वाले के लिए next conversation useful रखते हैं।', 'Decision घेणाऱ्या व्यक्तीसाठी next conversation useful ठेवूया.')
+      askNext = phrase(language, 'When can we speak with the decision-maker together?', 'Decision-maker से साथ में कब बात कर सकते हैं?', 'Decision-maker सोबत आपण कधी बोलू शकतो?')
+      closingMove = 'Secure a specific decision-maker conversation.'
+    } else if (intent === 'TIME_EFFORT') {
+      stage = 'OBJECTION'; technique = 'Consequence Question'
+      askNext = phrase(language, 'Which part currently consumes the most time?', 'अभी कौन-सा part सबसे ज्यादा time लेता है?', 'सध्या कोणता part सर्वात जास्त वेळ घेतो?')
+      closingMove = 'Identify whether reduced effort creates enough value.'
+    }
+  }
+
+  if (decisionMaker === 'Not Reached' && buyingSignal === 'Strong') {
+    stage = 'BUYING_SIGNAL'
+    technique = 'Decision-Maker Close'
+    punchLine = phrase(language, 'Perfect—we can keep setup ready. When can we get the decision-maker’s confirmation?', 'Perfect—setup ready रखते हैं। Decision-maker की confirmation कब ले सकते हैं?', 'Perfect—setup ready ठेवूया. Decision-maker ची confirmation कधी घेऊ शकतो?')
+    askNext = phrase(language, 'What exact time can we confirm this together?', 'किस exact time पर हम साथ में confirm कर सकते हैं?', 'कोणत्या exact वेळी आपण हे confirm करू शकतो?')
+    closingMove = 'Preserve the buying momentum and secure authority confirmation.'
+    warning = 'Buying intent is strong, but approval is still required'
+  }
+
   return {
     stage,
     customerSignal: buyingSignal !== 'None' ? `${buyingSignal} buying signal` : objection.title || 'Needs discovery',
@@ -295,11 +356,17 @@ export function analyzeSalesBrain(statement, options = {}) {
     punchLine,
     closingMove,
     detectedIntent: [...new Set([
+      semanticTop.confidence >= 0.34 && semanticTop.intent !== 'GENERAL' ? semanticTop.intent : '',
       ...normalizedConversation.concepts,
       objection.objectionType !== 'GENERAL' ? objection.objectionType : '',
       buyingSignal === 'Strong' ? 'BUYING_SIGNAL' : '',
     ].filter(Boolean))].join(' + ') || 'GENERAL',
     product: product || 'General',
     responseLanguage: language,
+    semanticIntents,
+    semanticConfidence: semanticTop.confidence,
+    activeObjection: objection.objectionType,
+    objectionChanged: previousObjection !== 'GENERAL' && previousObjection !== objection.objectionType,
+    conversationTurnCount: recentTurns.length,
   }
 }
