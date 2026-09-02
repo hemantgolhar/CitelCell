@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { analyzeSalesStatement } from '../services/salesCoach'
+import { analyzeSalesBrain } from '../services/salesBrain'
 import { getProducts } from '../utils/pipeline'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 
@@ -15,23 +16,31 @@ function SalesCoach({ lead, onBack }) {
   const [responseLanguage, setResponseLanguage] = useState('Auto')
   const [recognitionLanguage, setRecognitionLanguage] = useState('Auto / Mixed')
   const [result, setResult] = useState(null)
+  const [brain, setBrain] = useState(null)
   const products = getProducts(lead)
 
+  const runCoach = (text, objectionType = '') => {
+    const coaching = analyzeSalesStatement(text, { lead, responseLanguage, objectionType })
+    setResult(coaching)
+    setBrain(analyzeSalesBrain(text, { lead, objection: coaching, responseLanguage }))
+  }
+
   const handleRecognizedSpeech = (text) => {
-    setStatement((current) => `${current.trim()} ${text}`.trim().slice(-1200))
-    setResult(analyzeSalesStatement(text, { lead, responseLanguage }))
+    const transcript = `${statement.trim()} ${text}`.trim().slice(-1200)
+    setStatement(transcript)
+    runCoach(transcript)
   }
 
   const speech = useSpeechRecognition({ language: recognitionLanguage, onFinalTranscript: handleRecognizedSpeech })
 
   const analyze = (objectionType = '') => {
     if (!statement.trim() && !objectionType) return
-    setResult(analyzeSalesStatement(statement, { lead, responseLanguage, objectionType }))
+    runCoach(statement, objectionType)
   }
 
   const handleQuickObjection = (objectionType, label) => {
     setStatement(label)
-    setResult(analyzeSalesStatement(label, { lead, responseLanguage, objectionType }))
+    runCoach(label, objectionType)
   }
 
   return <main className="page sales-coach-page">
@@ -44,8 +53,8 @@ function SalesCoach({ lead, onBack }) {
     </section>
 
     <section className="coach-input-card">
-      <div className="coach-card-heading"><div><p>Sales Coach</p><h2>What did the customer say?</h2></div><label>Response language<select value={responseLanguage} onChange={(event) => { setResponseLanguage(event.target.value); setResult(null) }}>{languages.map((language) => <option key={language}>{language}</option>)}</select></label></div>
-      <label className="coach-statement">Customer said:<textarea rows="5" value={statement} onChange={(event) => { setStatement(event.target.value); setResult(null) }} placeholder="Type the customer's exact words…" /></label>
+      <div className="coach-card-heading"><div><p>Sales Coach</p><h2>What did the customer say?</h2></div><label>Response language<select value={responseLanguage} onChange={(event) => { setResponseLanguage(event.target.value); setResult(null); setBrain(null) }}>{languages.map((language) => <option key={language}>{language}</option>)}</select></label></div>
+      <label className="coach-statement">Customer said:<textarea rows="5" value={statement} onChange={(event) => { setStatement(event.target.value); setResult(null); setBrain(null) }} placeholder="Type the customer's exact words…" /></label>
       <div className="coach-microphone">
         <div className="coach-mic-settings"><label>Recognition language<select value={recognitionLanguage} disabled={speech.active} onChange={(event) => setRecognitionLanguage(event.target.value)}>{recognitionLanguages.map((language) => <option key={language}>{language}</option>)}</select></label><div className={speech.active ? 'listening' : ''}><span aria-hidden="true">●</span><strong>{speech.status}</strong></div></div>
         {speech.interimTranscript && <div className="coach-interim"><span>Hearing now</span><p>{speech.interimTranscript}</p></div>}
@@ -58,12 +67,19 @@ function SalesCoach({ lead, onBack }) {
       <div className="coach-quick"><span>Quick objections</span><div>{quickObjections.map(([type, label]) => <button key={type} type="button" onClick={() => handleQuickObjection(type, label)}>{label}</button>)}</div></div>
     </section>
 
-    {result && <section className="coach-result" aria-live="polite">
+    {result && brain && <section className="coach-result coach-brain" aria-live="polite">
+      <div className="brain-title"><div><span>Sales Brain</span><strong>{brain.product}</strong></div>{brain.buyingSignal === 'Strong' && <b>🔥 BUYING SIGNAL</b>}</div>
+      <div className="brain-summary"><div><span>Conversation Stage</span><strong>{brain.stage.replaceAll('_', ' ')}</strong></div><div><span>Customer Signal</span><strong>{brain.customerSignal}</strong></div><div><span>Technique</span><strong>{brain.technique}</strong></div></div>
+      {brain.warning && <div className="brain-warning">⚠ {brain.warning}</div>}
+      <article className="brain-best"><span>Best move</span><p>{brain.bestMove}</p></article>
+      <article className="coach-next"><span>Ask next</span><p>{brain.askNext}</p></article>
+      <div className="coach-guidance"><article><span>Why</span><p>{brain.why}</p></article><article><span>Avoid</span><p>{brain.avoid}</p></article></div>
+      <article className="coach-action"><span>Next action</span><strong>{brain.nextAction}</strong></article>
+      {brain.decisionMaker === 'Not Reached' && <div className="brain-decision"><span>Decision Maker</span><strong>Not Reached</strong></div>}
+      <details className="brain-objection"><summary>Objection coaching</summary>
       <div className="coach-detected"><div><span>Detected objection</span><h2>{result.objectionType.replaceAll('_', ' ')}</h2></div><div><b className={`confidence-${result.confidence.toLowerCase()}`}>{result.confidence}</b><small>{result.responseLanguage}</small></div></div>
       <article className="coach-response"><span>Suggested response</span><p>{result.suggestedResponse}</p></article>
-      <article className="coach-next"><span>Ask next</span><p>{result.nextQuestion}</p></article>
-      <div className="coach-guidance"><article><span>Goal</span><p>{result.goal}</p></article><article><span>Avoid</span><p>{result.avoid}</p></article></div>
-      <article className="coach-action"><span>Next action</span><strong>{result.recommendedAction}</strong></article>
+      </details>
     </section>}
 
     {!result && <section className="coach-empty"><span aria-hidden="true">◎</span><strong>Ready when you are</strong><p>Type the customer’s words or choose a quick objection for short, practical coaching.</p></section>}
