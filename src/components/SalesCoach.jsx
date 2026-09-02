@@ -5,7 +5,8 @@ import { getProducts } from '../utils/pipeline'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { classifySalesIntent, classifySalesIntentFallback, getSemanticModelStatus } from '../services/semanticSalesClassifier'
 
-const languages = ['Auto', 'Marathi', 'Hindi', 'English']
+const languages = ['Auto', 'Natural Mixed', 'Marathi', 'Hindi', 'English']
+const coachStyles = ['Balanced', 'Consultative', 'Confident', 'Challenger', 'Friendly']
 const recognitionLanguages = ['Auto / Mixed', 'Marathi', 'Hindi', 'English']
 const standaloneProducts = ['General', 'Aura Smart Business Card', 'Google Review Card', 'Smart Menu', 'Citeltech POS', 'Citelflow.ai']
 const quickObjections = [
@@ -16,6 +17,7 @@ const quickObjections = [
 function SalesCoach({ lead = {}, onBack }) {
   const [statement, setStatement] = useState('')
   const [responseLanguage, setResponseLanguage] = useState('Auto')
+  const [coachStyle, setCoachStyle] = useState('Balanced')
   const [recognitionLanguage, setRecognitionLanguage] = useState('Auto / Mixed')
   const [result, setResult] = useState(null)
   const [brain, setBrain] = useState(null)
@@ -69,8 +71,8 @@ function SalesCoach({ lead = {}, onBack }) {
     const recentTurns = final
       ? updateTurns([...turnsRef.current, { id: turnId, speaker: 'customer', text: cleanText, timestamp: sequence, final: true, intents: fallbackIntents, objection: coaching.objectionType, buyingSignal: 'None' }])
       : turnsRef.current
-    const fallbackBrain = analyzeSalesBrain(cleanText, { lead: effectiveLead, objection: coaching, responseLanguage, semanticIntents: fallbackIntents, context: { latestTurn: recentTurns.at(-1), recentTurns } })
-    if (final && turnId) updateTurns(recentTurns.map((turn) => turn.id === turnId ? { ...turn, buyingSignal: fallbackBrain.buyingSignal } : turn))
+    const fallbackBrain = analyzeSalesBrain(cleanText, { lead: effectiveLead, objection: coaching, responseLanguage, coachStyle, semanticIntents: fallbackIntents, context: { latestTurn: recentTurns.at(-1), recentTurns } })
+    if (final && turnId) updateTurns(recentTurns.map((turn) => turn.id === turnId ? { ...turn, buyingSignal: fallbackBrain.buyingSignal, technique: fallbackBrain.technique, sayThis: fallbackBrain.punchLine, askNext: fallbackBrain.askNext } : turn))
     showCoaching(coaching, fallbackBrain, final)
 
     const modelStatus = getSemanticModelStatus()
@@ -80,8 +82,8 @@ function SalesCoach({ lead = {}, onBack }) {
       const currentTurns = turnId
         ? updateTurns(turnsRef.current.map((turn) => turn.id === turnId ? { ...turn, intents: semanticIntents } : turn))
         : turnsRef.current
-      const semanticBrain = analyzeSalesBrain(cleanText, { lead: effectiveLead, objection: coaching, responseLanguage, semanticIntents, context: { latestTurn: currentTurns.at(-1), recentTurns: currentTurns } })
-      if (turnId) updateTurns(currentTurns.map((turn) => turn.id === turnId ? { ...turn, buyingSignal: semanticBrain.buyingSignal } : turn))
+      const semanticBrain = analyzeSalesBrain(cleanText, { lead: effectiveLead, objection: coaching, responseLanguage, coachStyle, semanticIntents, context: { latestTurn: currentTurns.at(-1), recentTurns: currentTurns } })
+      if (turnId) updateTurns(currentTurns.map((turn) => turn.id === turnId ? { ...turn, buyingSignal: semanticBrain.buyingSignal, technique: semanticBrain.technique, sayThis: semanticBrain.punchLine, askNext: semanticBrain.askNext } : turn))
       setSemanticStatus(getSemanticModelStatus().state)
       if (sequence === analysisSequenceRef.current) showCoaching(coaching, semanticBrain, final)
     })
@@ -136,7 +138,7 @@ function SalesCoach({ lead = {}, onBack }) {
     {semanticStatus === 'failed' && <div className="coach-model-status fallback">Semantic model unavailable. Using local fallback coaching.</div>}
 
     <section className="coach-input-card">
-      <div className="coach-card-heading"><div><p>Sales Coach</p><h2>What did the customer say?</h2></div><label>Response language<select value={responseLanguage} onChange={(event) => { setResponseLanguage(event.target.value); setResult(null); setBrain(null) }}>{languages.map((language) => <option key={language}>{language}</option>)}</select></label></div>
+      <div className="coach-card-heading"><div><p>Sales Coach</p><h2>What did the customer say?</h2></div><div className="coach-preferences"><label>Response language<select value={responseLanguage} onChange={(event) => { setResponseLanguage(event.target.value); setResult(null); setBrain(null) }}>{languages.map((language) => <option key={language}>{language}</option>)}</select></label><label>Coach Style<select value={coachStyle} onChange={(event) => { setCoachStyle(event.target.value); setResult(null); setBrain(null) }}>{coachStyles.map((style) => <option key={style}>{style}</option>)}</select></label></div></div>
       {!hasLead && <label className="coach-product-select">Select Product<select value={selectedProduct} onChange={(event) => { setSelectedProduct(event.target.value); setResult(null); setBrain(null) }}>{standaloneProducts.map((product) => <option key={product}>{product}</option>)}</select></label>}
       <label className="coach-statement">Customer said:<textarea rows="5" value={statement} onChange={(event) => { setStatement(event.target.value); setResult(null); setBrain(null) }} placeholder="Type the customer's exact words…" /></label>
       <div className="coach-microphone">

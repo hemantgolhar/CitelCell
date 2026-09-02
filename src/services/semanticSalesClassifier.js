@@ -11,7 +11,7 @@ const EXAMPLES = {
   PRICE_VALUE: ['2500 सिर्फ card के लिए?', 'इतके पैसे देऊन मला काय मिळणार?', 'Isme actual फायदा क्या है?', 'Seems expensive for what it does.', 'इतका खर्च justify कसा होईल?', 'Price jast aahe for this value.', 'Price किती?', 'What does it cost?'],
   THINK_ABOUT_IT: ['I need to think about it.', 'Soch ke batata hu.', 'मी विचार करून सांगतो.', 'Thoda vichar karun sangto.', 'Let me consider it first.'],
   NO_NEED: ['We do not need this right now.', 'Abhi requirement nahi hai.', 'आत्ता गरज नाही.', 'Sadhya yachi garaj vatat nahi.', 'There is no requirement currently.'],
-  STATUS_QUO: ['Abhi jo system hai wo thik chal raha hai.', 'सध्याचं ठीक चाललंय.', "We're fine with what we have.", 'Already current process works.', 'Menu change hi kitni baar hota hai.', 'Already menu aahe.'],
+  STATUS_QUO: ['Abhi jo system hai wo thik chal raha hai.', 'सध्याचं ठीक चाललंय.', "We're fine with what we have.", 'Already current process works.', 'Menu change hi kitni baar hota hai.', 'Already menu aahe.', 'Already Google reviews aahet, card कशाला?', 'Current POS thik chal raha hai.'],
   OWNER_UNAVAILABLE: ['Owner is not available.', 'Owner abhi nahi hai.', 'मालक आज नाहीत.', 'Malak udya yetil.', 'Sir baad me milenge.'],
   DECISION_AUTHORITY: ['मी एकटा decision घेऊ शकत नाही.', 'I need management approval.', 'Mere haath me decision nahi hai.', 'Someone else has to approve this.', 'Owner se confirmation chahiye.'],
   PARTNER_APPROVAL: ['Partner decide karega.', 'Partner se discuss karna padega.', 'Partner sobat bolun sangto.', 'I must discuss it with my partner.', 'पार्टनरची approval लागेल.'],
@@ -20,10 +20,10 @@ const EXAMPLES = {
   COMPETITOR: ['We are comparing another vendor.', 'Dusra POS bhi dekh rahe hain.', 'दुसरा option बघतोय.', 'Your competitor offers this.', 'We already use another product.'],
   BUDGET: ['There is no budget right now.', 'Budget ke bahar hai.', 'इतका budget नाही.', 'We cannot afford it currently.', 'Paise approve nahi hue.'],
   TRUST: ['How can I trust this company?', 'Is this reliable?', 'यावर विश्वास कसा ठेवू?', 'Koi guarantee hai kya?', 'How do I know your claims are genuine?'],
-  PROOF_TRIAL: ['पहिले वापरून बघितल्याशिवाय कसं घेऊ?', 'Can I try it first?', 'Pehle demo use karke dekhna hai.', 'How do I know it actually works?', 'Trial milega kya?'],
+  PROOF_TRIAL: ['पहिले वापरून बघितल्याशिवाय कसं घेऊ?', 'Can I try it first?', 'Pehle demo use karke dekhna hai.', 'Pehle demo dekhunga, uske baad decide karunga.', 'How do I know it actually works?', 'Trial milega kya?'],
   USABILITY: ['Mere staff ko difficult padega.', 'Staff ko samajh nahi aayega.', 'हे वापरणं अवघड नाही ना?', 'Will my team be able to use it?', 'Training mein problem hogi.'],
   ADOPTION_CONCERN: ["I don't know if customers will actually use this.", 'Customer scan karenge kya?', 'लोक हे वापरतील का?', 'Mere customers ko samjhega nahi.', 'Humare customers review dete hi nahi.', 'Will people adopt it?'],
-  TIME_EFFORT: ['This will take too much time.', 'Setup mein kitna effort lagega?', 'हे manage करायला वेळ जाईल.', 'Staff is too busy for this.', 'How long will changes take?'],
+  TIME_EFFORT: ['This will take too much time.', 'Setup mein kitna effort lagega?', 'हे manage करायला वेळ जाईल.', 'Staff is too busy for this.', 'How long will changes take?', 'Abhi time nahi hai.'],
   IMPLEMENTATION: ['Tomorrow setup kar sakte ho?', 'How quickly can you install it?', 'उद्या setup होईल का?', 'Implementation kitne din me hoga?', 'Change करायला किती वेळ लागतो?'],
   CUSTOMIZATION: ['Can we customize it?', 'Logo aur colors change honge?', 'आपल्या business प्रमाणे बदलता येईल?', 'Custom design milega kya?', 'Can this fit our process?'],
   PAYMENT: ['Payment kaise karna hai?', 'Can I pay by UPI?', 'पैसे कसे द्यायचे?', 'Send the payment link.', 'What are the payment terms?'],
@@ -64,10 +64,10 @@ function rank(items) {
 
 const PAYMENT_EVIDENCE = /(?:payment|pay\b|upi|qr\b|advance|card se payment|card ने payment|पैसे कसे द्यायचे|payment.*(?:kaise|kasa|कसे|kab|when)|(?:kaise|kasa|कसे|when).*(?:payment|pay))/i
 const IMPLEMENTATION_EVIDENCE = /(?:setup|install(?:ation)?|implementation|start (?:kar|कर|today|tomorrow)|(?:kal|tomorrow|उद्या).*(?:start|setup|install)|(?:start|setup|install).*(?:kal|tomorrow|उद्या))/i
-const PURCHASE_ACTION_EVIDENCE = /(?:how do (?:i|we) (?:pay|order|start)|order (?:kaise|kasa|कसा)|start (?:karte|karuya|करूया|करते)|(?:upi|qr).*(?:bhejo|send|pathva|पाठवा)|(?:bhejo|send|pathva|पाठवा).*(?:upi|qr)|\b\d+\s*(?:cards?|कार्ड).*(?:chahiye|पाहिजे|हवे)|(?:cards?|कार्ड).*(?:chahiye|पाहिजे|हवे))/i
+const PURCHASE_ACTION_EVIDENCE = /(?:how do (?:i|we) (?:pay|order|start)|order (?:kaise|kasa|कसा)|start (?:karte|karuya|करूया|करते)|(?:upi|qr).*(?:bhejo|send|pathva|पाठवा)|(?:bhejo|send|pathva|पाठवा).*(?:upi|qr)|\b\d+\s*(?:cards?|कार्ड).*(?:chahiye|पाहिजे|हवे)|(?:cards?|कार्ड).*(?:chahiye|पाहिजे|हवे)|discount.*(?:abhi|today|आत्ता).*(?:karta|proceed|घेतो)|\b\d{2,7}\s*(?:madhe|मध्ये|mein|में).*(?:hoil|hoga|कराल|doge))/i
 const PRICE_WORDS = /(?:price|cost|rate|mehenga|महंगा|महाग|jast|jasta|जास्त|high|इतके पैसे|rupaye|rupees?|रुपये|₹)/i
 const MONEY_AMOUNT = /(?:₹\s*)?\b\d{2,7}(?:[,.]\d+)?\b(?:\s*(?:rs\.?|inr|rupees?|rupaye|रुपये))?/i
-const DISCOUNT_EVIDENCE = /(?:discount|best price|final price|kam karo|kami kara|कमी करा|milnar ka|milega kya)/i
+const DISCOUNT_EVIDENCE = /(?:discount|best price|final price|kam karo|kami kara|कमी करा|milnar ka|milega kya|\b\d{2,7}\s*(?:madhe|मध्ये|mein|में).*(?:hoil|hoga|कराल|doge))/i
 
 function upsertCandidate(items, intent, confidence, source = 'deterministic-guardrail') {
   const existing = items.find((item) => item.intent === intent)

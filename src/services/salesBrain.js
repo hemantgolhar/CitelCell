@@ -1,5 +1,6 @@
 import { getProducts } from '../utils/pipeline.js'
 import { normalizeSalesConversation } from './salesLanguageNormalizer.js'
+import { EXPERT_SALES_PLAYBOOK, selectExpertSalesStrategy } from './expertSalesPlaybook.js'
 
 export const CONVERSATION_STAGES = ['OPENING', 'DISCOVERY', 'PROBLEM_FOUND', 'VALUE_BUILDING', 'OBJECTION', 'BUYING_SIGNAL', 'NEGOTIATION', 'CLOSING']
 
@@ -150,6 +151,8 @@ export function analyzeSalesBrain(statement, options = {}) {
   const previousTurn = recentTurns.length > 1 ? recentTurns.at(-2) : null
   const previousObjection = previousTurn?.objection || 'GENERAL'
   let buyingSignal = detectBuyingSignal(text)
+  const semanticBuyingSignal = semanticIntents.find((candidate) => candidate.intent === 'BUYING_SIGNAL')
+  if (buyingSignal === 'None' && semanticBuyingSignal?.confidence >= 0.9) buyingSignal = 'Strong'
   if (buyingSignal === 'None' && semanticTop.confidence >= 0.5 && ['IMPLEMENTATION', 'CUSTOMIZATION'].includes(semanticTop.intent)) buyingSignal = 'Medium'
   if (buyingSignal === 'None' && semanticTop.confidence >= 0.5 && semanticTop.intent === 'PAYMENT') buyingSignal = 'Strong'
   const decisionMaker = DECISION_MAKER.test(text)
@@ -340,6 +343,26 @@ export function analyzeSalesBrain(statement, options = {}) {
     warning = 'Buying intent is strong, but approval is still required'
   }
 
+  const legacyIntentMap = {
+    PRICE: 'PRICE_VALUE', THINK_ABOUT_IT: 'THINK_ABOUT_IT', NO_NEED: 'NO_NEED', OWNER_UNAVAILABLE: 'OWNER_UNAVAILABLE',
+    CALL_LATER: 'CALL_LATER', SEND_DETAILS: 'SEND_DETAILS', COMPETITOR: 'COMPETITOR', PARTNER_APPROVAL: 'PARTNER_APPROVAL',
+    NO_BUDGET: 'BUDGET', NO_TIME: 'TIME_EFFORT', TRUST: 'TRUST', NOT_INTERESTED: 'NOT_INTERESTED',
+  }
+  let playbookIntent = semanticTop.intent
+  if (normalizedConversation.concepts.includes('DISCOUNT')) playbookIntent = 'DISCOUNT'
+  else if (decisionMaker === 'Not Reached') playbookIntent = semanticTop.intent === 'PARTNER_APPROVAL' ? 'PARTNER_APPROVAL' : 'DECISION_AUTHORITY'
+  else if (!EXPERT_SALES_PLAYBOOK[playbookIntent]) playbookIntent = legacyIntentMap[objection.objectionType]
+  const selectedStrategy = playbookIntent && EXPERT_SALES_PLAYBOOK[playbookIntent]
+    ? selectExpertSalesStrategy({ intent: playbookIntent, product: product || 'General', language: options.responseLanguage === 'Natural Mixed' ? 'Natural Mixed' : language, style: options.coachStyle || 'Balanced', recentTurns, buyingSignal })
+    : null
+  if (selectedStrategy) {
+    technique = selectedStrategy.technique
+    punchLine = selectedStrategy.sayThis
+    askNext = selectedStrategy.askNext
+    closingMove = selectedStrategy.closingMove
+    why = selectedStrategy.purpose
+  }
+
   return {
     stage,
     customerSignal: buyingSignal !== 'None' ? `${buyingSignal} buying signal` : objection.title || 'Needs discovery',
@@ -368,5 +391,6 @@ export function analyzeSalesBrain(statement, options = {}) {
     activeObjection: objection.objectionType,
     objectionChanged: previousObjection !== 'GENERAL' && previousObjection !== objection.objectionType,
     conversationTurnCount: recentTurns.length,
+    strategySequence: selectedStrategy?.sequence || 0,
   }
 }
